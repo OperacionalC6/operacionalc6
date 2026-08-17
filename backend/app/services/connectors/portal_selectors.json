@@ -36,5 +36,62 @@
         "dimension_columns": []
       }
     }
-  ]
+  ],
+  "looker": {
+    "_origem": "Extraído do HTML real do hub 'One Page - Auto' e da tela do relatório 'Comissão À Vista' em 2026-08-17.",
+    "_atencao": [
+      "Os relatórios de comissão (Apuração Parceiro 2.0, Apuração Parceiro - Histórica etc.) NÃO ficam no",
+      "WebAutorizador — ficam em dashboards Looker (c6bank.cloud.looker.com), acessados a partir de cards no",
+      "hub interno 'One Page - Auto'. A sessão autenticada no login acima (WebAutorizador) já basta para acessar",
+      "o Looker também — confirmado pelo usuário, não é preciso um segundo login.",
+      "O filtro de período é aplicado via query string na própria URL do dashboard (Looker suporta isso",
+      "nativamente — visto em outro card do hub com '?Tipo+Exibicao=...&Tp+Atendimento=...'), em vez de clicar",
+      "no seletor de datas da UI (mais frágil). PENDENTE VALIDAR: o valor exato de filter_value abaixo",
+      "('this month') precisa ser conferido rodando com HEADLESS=false — o padrão observado na tela era",
+      "'is in the last 6 months' (sintaxe Looker 'N months'); não confirmamos ainda se 'this month' produz o",
+      "mesmo resultado que selecionar manualmente o mês corrente, ou se o valor correto é '1 months'.",
+      "PENDENTE VALIDAR: clicar em 'Download data' pode abrir um modal de confirmação/formato em vez de",
+      "baixar direto — o HTML capturado foi com o menu fechado, não vimos o resultado do clique."
+    ],
+    "base_url": "https://c6bank.cloud.looker.com",
+    "download_menu_item_text": "Download data",
+    "reports": [
+      {
+        "name": "comissao_avista",
+        "description": "Apuração Parceiro 2.0 > Apuração Comissão À Vista. 4 tiles nesta aba, todas precisam ser exportadas.",
+        "dashboard_slug": "corp_consignado_embed::01526_auto",
+        "filter_param": "Safra Mês",
+        "filter_value": "this month",
+        "download_wait_ms": 20000,
+        "tiles": [
+          {
+            "key": "detalhamento",
+            "name": "Comissão À Vista - Detalhamento",
+            "column_mapping": null
+          },
+          {
+            "key": "detalhamento_por_filial",
+            "name": "Comissão À Vista - Detalhamento por Filial",
+            "column_mapping": null
+          },
+          {
+            "key": "analitico",
+            "name": "Comissão À Vista - AnalÍtico",
+            "column_mapping": {
+              "date_column": null,
+              "value_column": null,
+              "metric_name": "comissao_avista",
+              "team_column": null,
+              "dimension_columns": []
+            }
+          },
+          {
+            "key": "qtde_por_alcadas",
+            "name": "Comissão À Vista - Qtde por Alçadas",
+            "column_mapping": null
+          }
+        ]
+      }
+    ]
+  }
 }

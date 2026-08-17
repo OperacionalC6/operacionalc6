@@ -1,5 +1,7 @@
 """
-Conector RPA (automação de portal web) para o WebAutorizador do C6 Consig.
+Conector RPA (automação de portal web) para o WebAutorizador do C6 Consig e,
+a partir da mesma sessão logada, para os dashboards Looker de comissão do
+hub interno "One Page - Auto" (c6bank.cloud.looker.com).
 
 *** LEIA ANTES DE USAR EM PRODUÇÃO ***
 
@@ -34,6 +36,7 @@ import os
 import time
 from datetime import date, datetime
 from pathlib import Path
+from urllib.parse import quote
 
 import pandas as pd
 import pyotp
@@ -81,6 +84,22 @@ class PortalRpaConnector(DataConnector):
                     records.extend(
                         self._parse_report(downloaded_file, report_cfg, date_from, date_to)
                     )
+                for looker_report_cfg in self._config.get("looker", {}).get("reports", []):
+                    for downloaded_file, tile_cfg in self._download_looker_tiles(
+                        page, looker_report_cfg
+                    ):
+                        if not tile_cfg.get("column_mapping"):
+                            logger.info(
+                                "Tile '%s' baixada em %s mas sem column_mapping "
+                                "definido ainda — pulando parsing (arquivo fica "
+                                "salvo para mapear depois).",
+                                tile_cfg["name"],
+                                downloaded_file,
+                            )
+                            continue
+                        records.extend(
+                            self._parse_report(downloaded_file, tile_cfg, date_from, date_to)
+                        )
             except Exception:
                 self._save_failure_artifacts(page)
                 raise
@@ -159,6 +178,62 @@ class PortalRpaConnector(DataConnector):
         download.save_as(dest)
         logger.info("Relatório '%s' baixado em %s", report_cfg["name"], dest)
         return dest
+
+    def _download_looker_tiles(
+        self, page: Page, report_cfg: dict
+    ) -> list[tuple[Path, dict]]:
+        """
+        Dashboards Looker (ex.: Apuração Parceiro 2.0) são um sistema à parte do
+        WebAutorizador, em outro domínio (c6bank.cloud.looker.com), mas a mesma
+        sessão de login já dá acesso — não é preciso autenticar de novo.
+
+        Cada dashboard tem várias tiles (tabelas) que precisam ser baixadas
+        separadamente, cada uma com seu próprio botão "Tile actions" — usamos o
+        aria-label (estável) em vez das classes CSS com hash do Looker, que mudam
+        a cada deploy.
+
+        O filtro de período é aplicado via query string na própria URL do
+        dashboard, em vez de manipular o seletor de datas na UI (mais frágil).
+        PENDENTE VALIDAR com HEADLESS=false: se `filter_value` realmente produz
+        o mesmo resultado que selecionar o mês corrente manualmente, e se
+        "Download data" baixa direto ou abre um modal de confirmação/formato
+        (ver `_atencao` em portal_selectors.json).
+        """
+        looker_cfg = self._config["looker"]
+        url = f"{looker_cfg['base_url']}/embed/dashboards/{report_cfg['dashboard_slug']}"
+        if report_cfg.get("filter_param") and report_cfg.get("filter_value"):
+            url += (
+                f"?{quote(report_cfg['filter_param'])}="
+                f"{quote(report_cfg['filter_value'])}"
+            )
+
+        page.goto(url, wait_until="networkidle")
+
+        download_menu_item = looker_cfg.get("download_menu_item_text", "Download data")
+        results: list[tuple[Path, dict]] = []
+        for tile in report_cfg["tiles"]:
+            with page.expect_download(
+                timeout=report_cfg.get("download_wait_ms", 20000)
+            ) as download_info:
+                page.get_by_role("button", name=f"{tile['name']} - Tile actions").click()
+                page.get_by_text(download_menu_item, exact=True).click()
+            download = download_info.value
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            dest = (
+                _ARTIFACTS_DIR
+                / f"{report_cfg['name']}_{tile['key']}_{timestamp}"
+                f"{Path(download.suggested_filename).suffix}"
+            )
+            download.save_as(dest)
+            logger.info(
+                "Tile '%s' do relatório Looker '%s' baixado em %s",
+                tile["name"],
+                report_cfg["name"],
+                dest,
+            )
+            results.append((dest, tile))
+        return results
 
     @staticmethod
     def _parse_report(
