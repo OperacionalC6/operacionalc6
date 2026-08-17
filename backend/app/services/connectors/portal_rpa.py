@@ -274,3 +274,53 @@ class PortalRpaConnector(DataConnector):
             (_ARTIFACTS_DIR / f"failure_{timestamp}.html").write_text(page.content(), encoding="utf-8")
         except Exception:
             logger.exception("Não foi possível salvar artefatos de falha do RPA.")
+
+
+def _run_cli() -> None:
+    """
+    Execução manual para validar o RPA visualmente contra o portal real antes de
+    colocar em produção. Rode com HEADLESS=false para ver o navegador:
+
+        HEADLESS=false RPA_ARTIFACTS_DIR=./artifacts \\
+            python -m app.services.connectors.portal_rpa --debug
+
+    Credenciais vêm do .env (C6_PORTAL_USERNAME / C6_PORTAL_PASSWORD) — nunca
+    passe usuário/senha por linha de comando ou variável exposta em logs.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--debug", action="store_true", help="Logs em nível DEBUG.")
+    parser.add_argument(
+        "--date-from",
+        type=date.fromisoformat,
+        default=date.today().replace(day=1),
+        help="Data inicial YYYY-MM-DD (padrão: dia 1 do mês corrente).",
+    )
+    parser.add_argument(
+        "--date-to",
+        type=date.fromisoformat,
+        default=date.today(),
+        help="Data final YYYY-MM-DD (padrão: hoje).",
+    )
+    args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+    connector = PortalRpaConnector()
+    records = connector.fetch(date_from=args.date_from, date_to=args.date_to)
+
+    logger.info("Total de registros extraídos e parseados: %d", len(records))
+    for record in records[:10]:
+        logger.info(record)
+    logger.info(
+        "Arquivos baixados (inclusive tiles sem column_mapping ainda) ficam em: %s",
+        _ARTIFACTS_DIR,
+    )
+
+
+if __name__ == "__main__":
+    _run_cli()
