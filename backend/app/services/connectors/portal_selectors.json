@@ -12,27 +12,28 @@
     "colocar em produção."
   ],
   "login": {
-    "_origem": "Extraído do HTML real da tela de login (AC.UI.LOGIN.aspx) em 2026-08-17.",
+    "_origem": "Extraído do HTML real da tela de login (AC.UI.LOGIN.aspx) e do menu pós-login em 2026-08-17.",
     "username_selector": "#EUsuario_CAMPO",
     "password_selector": "#ESenha_CAMPO",
     "submit_selector": "#lnkEntrar",
     "totp_selector": null,
     "error_message_selector": "#lblErro, #Sumario",
+    "success_indicator_selector": "#navbar-collapse-funcao, #lnkSair",
     "login_url_marker": "AC.UI.LOGIN"
   },
   "reports": [
     {
-      "name": "producao_diaria",
-      "description": "EXEMPLO — ajustar para o relatório real de produção/propostas do backoffice.",
-      "path": "/WebAutorizador/Relatorios/Producao.aspx",
-      "export_button_selector": "#btnExportarExcel",
+      "name": "relatorios_gerenciais",
+      "description": "PENDENTE — path real confirmado (menu Relatórios > Relatórios Gerenciais), mas ainda falta o HTML/print da tela em si (filtros disponíveis e botão de exportação) para preencher export_button_selector e column_mapping corretamente.",
+      "path": "/WebAutorizador/MenuWeb/Relatorios/Documentacao/UI.RelatorioGerencialExterno.aspx",
+      "export_button_selector": null,
       "download_wait_ms": 15000,
       "column_mapping": {
-        "date_column": "Data",
-        "value_column": "Valor",
+        "date_column": null,
+        "value_column": null,
         "metric_name": "producao_valor",
-        "team_column": "Equipe",
-        "dimension_columns": ["Produto", "Agente", "Status"]
+        "team_column": null,
+        "dimension_columns": []
       }
     }
   ]

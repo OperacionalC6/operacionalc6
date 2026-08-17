@@ -97,18 +97,15 @@ class PortalRpaConnector(DataConnector):
         ao clicar em "Entrar", a página pode (a) navegar para a área logada em
         caso de sucesso, ou (b) permanecer na mesma URL e exibir uma mensagem
         de erro em `#lblErro`/`#Sumario` em caso de falha — sem recarregar.
-        Por isso não dá pra usar só `wait_for_navigation`; fazemos polling das
-        duas condições em paralelo.
-
-        Ainda não temos o seletor de "login bem-sucedido" (precisa do HTML da
-        tela pós-login) — assim que tivermos, adicione-o em
-        `login.success_indicator_selector` no portal_selectors.json e troque
-        a checagem de URL abaixo por `page.locator(success_selector).count() > 0`,
-        que é mais robusto.
+        Por isso não dá pra usar só `wait_for_navigation`; fazemos polling de
+        três condições: menu pós-login apareceu (sucesso), mensagem de erro
+        apareceu (falha), ou a URL saiu da tela de login (sucesso, fallback
+        caso o seletor do menu mude no futuro).
         """
         login_cfg = self._config["login"]
         login_url_marker = login_cfg.get("login_url_marker", "AC.UI.LOGIN")
         error_selector = login_cfg.get("error_message_selector")
+        success_selector = login_cfg.get("success_indicator_selector")
 
         page.goto(settings.c6_portal_base_url, wait_until="networkidle")
 
@@ -123,8 +120,12 @@ class PortalRpaConnector(DataConnector):
 
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
+            if success_selector and page.locator(success_selector).first.count() > 0:
+                logger.info("Login RPA no portal C6 concluído com sucesso (menu detectado).")
+                return
+
             if login_url_marker not in page.url:
-                logger.info("Login RPA no portal C6 concluído com sucesso.")
+                logger.info("Login RPA no portal C6 concluído com sucesso (URL mudou).")
                 return
 
             if error_selector:
