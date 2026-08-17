@@ -31,12 +31,13 @@ durante uma requisição HTTP.
 import json
 import logging
 import os
+import time
 from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
 import pyotp
-from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, sync_playwright
+from playwright.sync_api import Page, sync_playwright
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import get_settings
@@ -91,7 +92,24 @@ class PortalRpaConnector(DataConnector):
 
     @retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=3, max=15))
     def _login(self, page: Page) -> None:
+        """
+        O login do WebAutorizador é um postback assíncrono (UpdatePanel ASP.NET):
+        ao clicar em "Entrar", a página pode (a) navegar para a área logada em
+        caso de sucesso, ou (b) permanecer na mesma URL e exibir uma mensagem
+        de erro em `#lblErro`/`#Sumario` em caso de falha — sem recarregar.
+        Por isso não dá pra usar só `wait_for_navigation`; fazemos polling das
+        duas condições em paralelo.
+
+        Ainda não temos o seletor de "login bem-sucedido" (precisa do HTML da
+        tela pós-login) — assim que tivermos, adicione-o em
+        `login.success_indicator_selector` no portal_selectors.json e troque
+        a checagem de URL abaixo por `page.locator(success_selector).count() > 0`,
+        que é mais robusto.
+        """
         login_cfg = self._config["login"]
+        login_url_marker = login_cfg.get("login_url_marker", "AC.UI.LOGIN")
+        error_selector = login_cfg.get("error_message_selector")
+
         page.goto(settings.c6_portal_base_url, wait_until="networkidle")
 
         page.fill(login_cfg["username_selector"], settings.c6_portal_username)
@@ -103,21 +121,29 @@ class PortalRpaConnector(DataConnector):
 
         page.click(login_cfg["submit_selector"])
 
-        error_selector = login_cfg.get("error_message_selector")
-        success_selector = login_cfg["success_indicator_selector"]
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            if login_url_marker not in page.url:
+                logger.info("Login RPA no portal C6 concluído com sucesso.")
+                return
 
-        try:
-            page.wait_for_selector(success_selector, timeout=20000)
-        except PlaywrightTimeoutError:
-            error_text = None
-            if error_selector and page.locator(error_selector).count() > 0:
-                error_text = page.locator(error_selector).first.inner_text()
-            raise PortalLoginError(
-                f"Falha ao autenticar no portal C6 (usuário de automação). "
-                f"Mensagem do portal: {error_text or 'não identificada'}."
-            )
+            if error_selector:
+                error_locator = page.locator(error_selector).first
+                if error_locator.count() > 0:
+                    error_text = error_locator.inner_text().strip()
+                    if error_text:
+                        raise PortalLoginError(
+                            f"Falha ao autenticar no portal C6 (usuário de automação). "
+                            f"Mensagem do portal: {error_text}."
+                        )
 
-        logger.info("Login RPA no portal C6 concluído com sucesso.")
+            page.wait_for_timeout(500)
+
+        raise PortalLoginError(
+            "Timeout aguardando resposta do login no portal C6 — nem sucesso "
+            "(mudança de URL) nem mensagem de erro foram detectados em 20s. "
+            "O portal pode ter mudado; revise portal_selectors.json."
+        )
 
     def _download_report(self, page: Page, report_cfg: dict) -> Path:
         base = settings.c6_portal_base_url.split("/WebAutorizador")[0]

@@ -12,12 +12,13 @@
     "colocar em produção."
   ],
   "login": {
-    "username_selector": "#txtUsuario",
-    "password_selector": "#txtSenha",
-    "submit_selector": "#btnLogin",
+    "_origem": "Extraído do HTML real da tela de login (AC.UI.LOGIN.aspx) em 2026-08-17.",
+    "username_selector": "#EUsuario_CAMPO",
+    "password_selector": "#ESenha_CAMPO",
+    "submit_selector": "#lnkEntrar",
     "totp_selector": null,
-    "success_indicator_selector": "#menuPrincipal",
-    "error_message_selector": ".mensagem-erro"
+    "error_message_selector": "#lblErro, #Sumario",
+    "login_url_marker": "AC.UI.LOGIN"
   },
   "reports": [
     {
