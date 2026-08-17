@@ -29,6 +29,8 @@ data/
 postgres-data/
 playwright-artifacts/
 downloads/
+artifacts/
+browser_profile/
 
 ## OS / editors
 .DS_Store

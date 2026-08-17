@@ -52,6 +52,7 @@ settings = get_settings()
 _CONFIG_PATH = Path(__file__).parent / "portal_selectors.json"
 _ARTIFACTS_DIR = Path(os.environ.get("RPA_ARTIFACTS_DIR", "/app/artifacts"))
 _HEADLESS = os.environ.get("HEADLESS", "true").lower() != "false"
+_BROWSER_PROFILE_DIR = Path(os.environ.get("RPA_BROWSER_PROFILE_DIR", "/app/browser_profile"))
 
 
 class PortalLoginError(RuntimeError):
@@ -69,14 +70,28 @@ class PortalRpaConnector(DataConnector):
             )
         self._config = json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
         _ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+        _BROWSER_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
 
     def fetch(self, *, date_from: date, date_to: date) -> list[ConnectorRecord]:
+        """
+        Usa um perfil de navegador PERSISTENTE (salvo em RPA_BROWSER_PROFILE_DIR)
+        em vez de um contexto novo/descartável a cada execução. Motivo: o
+        WebAutorizador exibe uma verificação extra de dispositivo ("Acessar
+        outros apps e serviços neste dispositivo") quando o login vem de um
+        navegador "desconhecido" — o que um contexto novo do Playwright sempre
+        parece ser, mesmo em uso legítimo. Um perfil persistente se comporta como
+        o Chrome do dia a dia: uma vez que o dispositivo seja aprovado numa
+        primeira rodada manual (HEADLESS=false), o cookie/estado de confiança
+        fica salvo em disco e roda headless depois — sem tentar disfarçar a
+        automação, só reaproveitando uma sessão já aprovada.
+        """
         records: list[ConnectorRecord] = []
 
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=_HEADLESS)
-            context = browser.new_context(accept_downloads=True)
-            page = context.new_page()
+            context = playwright.chromium.launch_persistent_context(
+                str(_BROWSER_PROFILE_DIR), headless=_HEADLESS, accept_downloads=True
+            )
+            page = context.pages[0] if context.pages else context.new_page()
             try:
                 self._login(page)
                 for report_cfg in self._config["reports"]:
@@ -105,7 +120,6 @@ class PortalRpaConnector(DataConnector):
                 raise
             finally:
                 context.close()
-                browser.close()
 
         return records
 
@@ -295,11 +309,19 @@ def _run_cli() -> None:
     Execução manual para validar o RPA visualmente contra o portal real antes de
     colocar em produção. Rode com HEADLESS=false para ver o navegador:
 
-        HEADLESS=false RPA_ARTIFACTS_DIR=./artifacts \\
+        HEADLESS=false RPA_ARTIFACTS_DIR=./artifacts RPA_BROWSER_PROFILE_DIR=./browser_profile \\
             python -m app.services.connectors.portal_rpa --debug
+
+    Na PRIMEIRA vez, se o portal pedir a verificação de dispositivo, resolva
+    manualmente (clique em Permitir/Bloquear) — como o perfil agora é
+    persistente (salvo em RPA_BROWSER_PROFILE_DIR), essa aprovação fica salva
+    e runs futuras (inclusive headless, num servidor) devem reaproveitar o
+    mesmo "dispositivo" sem pedir de novo.
 
     Credenciais vêm do .env (C6_PORTAL_USERNAME / C6_PORTAL_PASSWORD) — nunca
     passe usuário/senha por linha de comando ou variável exposta em logs.
+    Nunca commite a pasta de RPA_BROWSER_PROFILE_DIR — ela guarda cookies de
+    sessão reais.
     """
     import argparse
 
