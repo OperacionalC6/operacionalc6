@@ -126,7 +126,13 @@ class PortalRpaConnector(DataConnector):
         error_selector = login_cfg.get("error_message_selector")
         success_selector = login_cfg.get("success_indicator_selector")
 
-        page.goto(settings.c6_portal_base_url, wait_until="networkidle")
+        # "networkidle" trava em sites com scripts de antifraude que mantêm
+        # chamadas de rede em segundo plano (ex.: checagem de dispositivo do
+        # WebAutorizador) — a espera nunca "acalma" e o goto acaba estourando
+        # timeout. Esperamos só o HTML carregar e depois o campo de usuário
+        # aparecer, que é o que realmente importa para prosseguir.
+        page.goto(settings.c6_portal_base_url, wait_until="domcontentloaded")
+        page.locator(login_cfg["username_selector"]).wait_for(state="visible", timeout=20000)
 
         page.fill(login_cfg["username_selector"], settings.c6_portal_username)
         page.fill(login_cfg["password_selector"], settings.c6_portal_password)
@@ -207,7 +213,15 @@ class PortalRpaConnector(DataConnector):
                 f"{quote(report_cfg['filter_value'])}"
             )
 
-        page.goto(url, wait_until="networkidle")
+        # Mesmo motivo do login: "networkidle" trava em dashboards Looker, que
+        # mantêm chamadas de rede o tempo todo (polling, analytics). Esperamos
+        # o botão "Tile actions" da primeira tile aparecer, que é sinal de que
+        # o dashboard renderizou de verdade.
+        page.goto(url, wait_until="domcontentloaded")
+        first_tile_name = report_cfg["tiles"][0]["name"]
+        page.get_by_role("button", name=f"{first_tile_name} - Tile actions").wait_for(
+            state="visible", timeout=30000
+        )
 
         download_menu_item = looker_cfg.get("download_menu_item_text", "Download data")
         results: list[tuple[Path, dict]] = []
