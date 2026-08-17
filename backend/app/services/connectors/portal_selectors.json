@@ -1,0 +1,38 @@
+{
+  "_readme": [
+    "Este arquivo mapeia os seletores CSS/XPath do portal WebAutorizador do C6 Consig.",
+    "Os valores abaixo são PLACEHOLDERS — o assistente que gerou este projeto não tem",
+    "acesso ao portal autenticado, então não é possível inspecionar o HTML real.",
+    "Para preencher: faça login manualmente no portal, abra o DevTools do navegador",
+    "(F12 > Elements), clique com o botão direito no campo/botão desejado > Inspect,",
+    "e copie um seletor estável (id, name, ou data-testid — evite classes CSS geradas",
+    "automaticamente, que mudam a cada deploy do sistema legado).",
+    "Depois de editar, rode `python -m app.services.connectors.portal_rpa --debug`",
+    "localmente com HEADLESS=false para validar visualmente cada passo antes de",
+    "colocar em produção."
+  ],
+  "login": {
+    "username_selector": "#txtUsuario",
+    "password_selector": "#txtSenha",
+    "submit_selector": "#btnLogin",
+    "totp_selector": null,
+    "success_indicator_selector": "#menuPrincipal",
+    "error_message_selector": ".mensagem-erro"
+  },
+  "reports": [
+    {
+      "name": "producao_diaria",
+      "description": "EXEMPLO — ajustar para o relatório real de produção/propostas do backoffice.",
+      "path": "/WebAutorizador/Relatorios/Producao.aspx",
+      "export_button_selector": "#btnExportarExcel",
+      "download_wait_ms": 15000,
+      "column_mapping": {
+        "date_column": "Data",
+        "value_column": "Valor",
+        "metric_name": "producao_valor",
+        "team_column": "Equipe",
+        "dimension_columns": ["Produto", "Agente", "Status"]
+      }
+    }
+  ]
+}
