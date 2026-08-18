@@ -21,22 +21,7 @@
     "success_indicator_selector": "#navbar-collapse-funcao, #lnkSair",
     "login_url_marker": "AC.UI.LOGIN"
   },
-  "reports": [
-    {
-      "name": "relatorios_gerenciais",
-      "description": "PENDENTE — path real confirmado (menu Relatórios > Relatórios Gerenciais), mas ainda falta o HTML/print da tela em si (filtros disponíveis e botão de exportação) para preencher export_button_selector e column_mapping corretamente.",
-      "path": "/WebAutorizador/MenuWeb/Relatorios/Documentacao/UI.RelatorioGerencialExterno.aspx",
-      "export_button_selector": null,
-      "download_wait_ms": 15000,
-      "column_mapping": {
-        "date_column": null,
-        "value_column": null,
-        "metric_name": "producao_valor",
-        "team_column": null,
-        "dimension_columns": []
-      }
-    }
-  ],
+  "reports": [],
   "looker": {
     "_origem": "Extraído do HTML real do hub 'One Page - Auto' e da tela do relatório 'Comissão À Vista' em 2026-08-17.",
     "_atencao": [
@@ -44,6 +29,12 @@
       "WebAutorizador — ficam em dashboards Looker (c6bank.cloud.looker.com), acessados a partir de cards no",
       "hub interno 'One Page - Auto'. A sessão autenticada no login acima (WebAutorizador) já basta para acessar",
       "o Looker também — confirmado pelo usuário, não é preciso um segundo login.",
+      "IMPORTANTE (confirmado em teste real em 2026-08-18): ir direto pra URL de um dashboard Looker sem antes",
+      "visitar bootstrap_path (abaixo) resulta em página de 'não autorizado'. bootstrap_path é o antigo path",
+      "'relatorios_gerenciais' (menu Relatórios > Relatórios Gerenciais do WebAutorizador) — na real ele não é",
+      "um relatório com botão de exportar, é a página que faz o handshake/SSO com o Looker e abre o hub",
+      "'One Page - Auto' (que é o próprio dashboard Looker 371, aba 'One Page - Operacional'). Por isso o",
+      "conector visita esse path uma vez por execução antes de qualquer dashboard_slug.",
       "O filtro de período é aplicado via query string na própria URL do dashboard (Looker suporta isso",
       "nativamente — visto em outro card do hub com '?Tipo+Exibicao=...&Tp+Atendimento=...'), em vez de clicar",
       "no seletor de datas da UI (mais frágil). PENDENTE VALIDAR: o valor exato de filter_value abaixo",
@@ -53,6 +44,7 @@
       "PENDENTE VALIDAR: clicar em 'Download data' pode abrir um modal de confirmação/formato em vez de",
       "baixar direto — o HTML capturado foi com o menu fechado, não vimos o resultado do clique."
     ],
+    "bootstrap_path": "/WebAutorizador/MenuWeb/Relatorios/Documentacao/UI.RelatorioGerencialExterno.aspx",
     "base_url": "https://c6bank.cloud.looker.com",
     "download_menu_item_text": "Download data",
     "reports": [

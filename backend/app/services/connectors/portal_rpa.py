@@ -89,7 +89,12 @@ class PortalRpaConnector(DataConnector):
 
         with sync_playwright() as playwright:
             context = playwright.chromium.launch_persistent_context(
-                str(_BROWSER_PROFILE_DIR), headless=_HEADLESS, accept_downloads=True
+                str(_BROWSER_PROFILE_DIR),
+                headless=_HEADLESS,
+                accept_downloads=True,
+                # Evita o popup nativo "Salvar senha?" do Chrome, que interrompe
+                # a automação esperando alguém clicar "Nunca"/"Salvar".
+                args=["--disable-save-password-bubble"],
             )
             page = context.pages[0] if context.pages else context.new_page()
             # Por padrão o Playwright fecha sozinho qualquer confirm()/alert()
@@ -115,7 +120,10 @@ class PortalRpaConnector(DataConnector):
                     records.extend(
                         self._parse_report(downloaded_file, report_cfg, date_from, date_to)
                     )
-                for looker_report_cfg in self._config.get("looker", {}).get("reports", []):
+                looker_reports = self._config.get("looker", {}).get("reports", [])
+                if looker_reports:
+                    self._bootstrap_looker_session(page)
+                for looker_report_cfg in looker_reports:
                     for downloaded_file, tile_cfg in self._download_looker_tiles(
                         page, looker_report_cfg
                     ):
@@ -214,6 +222,19 @@ class PortalRpaConnector(DataConnector):
         download.save_as(dest)
         logger.info("Relatório '%s' baixado em %s", report_cfg["name"], dest)
         return dest
+
+    def _bootstrap_looker_session(self, page: Page) -> None:
+        """
+        Ir direto pra URL de um dashboard Looker sem passar por essa página do
+        WebAutorizador antes resulta em "não autorizado" (confirmado em teste
+        real) — essa página faz algum handshake/SSO com o Looker que autoriza
+        a sessão do navegador a acessar os dashboards depois. No uso manual,
+        isso acontece ao clicar em Relatórios > Relatórios Gerenciais.
+        """
+        looker_cfg = self._config["looker"]
+        base = settings.c6_portal_base_url.split("/WebAutorizador")[0]
+        page.goto(f"{base}{looker_cfg['bootstrap_path']}", wait_until="domcontentloaded")
+        page.wait_for_timeout(3000)
 
     def _download_looker_tiles(
         self, page: Page, report_cfg: dict
