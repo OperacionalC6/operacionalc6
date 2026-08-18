@@ -103,6 +103,14 @@ class PortalRpaConnector(DataConnector):
             try:
                 self._login(page)
                 for report_cfg in self._config["reports"]:
+                    if not report_cfg.get("export_button_selector"):
+                        logger.info(
+                            "Relatório '%s' ainda sem export_button_selector definido "
+                            "— pulando (preencha portal_selectors.json quando tiver "
+                            "o seletor real).",
+                            report_cfg["name"],
+                        )
+                        continue
                     downloaded_file = self._download_report(page, report_cfg)
                     records.extend(
                         self._parse_report(downloaded_file, report_cfg, date_from, date_to)
