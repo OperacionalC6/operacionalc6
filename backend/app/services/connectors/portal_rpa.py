@@ -92,6 +92,14 @@ class PortalRpaConnector(DataConnector):
                 str(_BROWSER_PROFILE_DIR), headless=_HEADLESS, accept_downloads=True
             )
             page = context.pages[0] if context.pages else context.new_page()
+            # Por padrão o Playwright fecha sozinho qualquer confirm()/alert()
+            # nativo do navegador (como se clicasse "Cancelar"), sem executar o
+            # código do script. O WebAutorizador usa um confirm() real pra
+            # perguntar "Usuário já autenticado em outra estação, desconectar?"
+            # quando sobra uma sessão anterior — sem isso, o login trava
+            # esperando uma resposta que nunca chega. Aceitar equivale a
+            # clicar "Sim" nesse popup, igual um humano faria.
+            page.on("dialog", lambda dialog: dialog.accept())
             try:
                 self._login(page)
                 for report_cfg in self._config["reports"]:
