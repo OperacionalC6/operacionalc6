@@ -1,0 +1,103 @@
+---
+name: rpa-conventions
+description: Convenções e lições aprendidas (na marra, testando contra o portal real) sobre o conector RPA do C6 Consig (backend/app/services/connectors/portal_rpa.py e portal_selectors.json) — Playwright, login WebAutorizador, dashboards Looker embutidos, parsing de CSV. Consulte SEMPRE antes de editar esses dois arquivos, antes de propor uma forma de esperar/clicar/navegar num teste RPA, ou ao diagnosticar um novo erro do script (timeout, TargetClosedError, popup inesperado). Evita redescobrir os mesmos problemas (perfil de navegador, popups, seletores) do zero.
+---
+
+# Convenções do conector RPA (C6 Consig)
+
+## O sistema real (não é só um portal)
+
+Duas coisas distintas, mesma sessão de login:
+1. **WebAutorizador** (`c6.c6consig.com.br`) — login ASP.NET WebForms clássico (UpdatePanel/postback).
+2. **Looker** (`c6bank.cloud.looker.com`) — onde os relatórios de comissão de verdade ficam (dashboards
+   embutidos), acessado a partir de um hub interno "One Page - Auto".
+
+**Importante**: ir direto pra URL de um dashboard Looker sem antes visitar o WebAutorizador em
+`bootstrap_path` (`/WebAutorizador/MenuWeb/Relatorios/Documentacao/UI.RelatorioGerencialExterno.aspx`)
+resulta em página de "não autorizado" — essa página faz um handshake/SSO com o Looker que autoriza a
+sessão do navegador. O código já trata isso em `_bootstrap_looker_session`; se for adicionar um dashboard
+Looker novo, não pule esse passo.
+
+## Erros que já resolvemos — não reintroduzir
+
+Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido aparecer, comece por aqui:
+
+1. **`page.goto(..., wait_until="networkidle")` trava/estoura timeout.**
+   O WebAutorizador e o Looker mantêm chamadas de rede em segundo plano (antifraude, analytics,
+   polling) que nunca "acalmam". Use `wait_until="domcontentloaded"` e depois espere um elemento
+   concreto ficar visível (`locator(...).wait_for(state="visible")`), nunca confie em networkidle.
+
+2. **`TargetClosedError` no meio do login, sem motivo aparente.**
+   Quase sempre é o navegador sendo fechado por fora do script (usuário achando que travou, ou um
+   popup nativo sem handler). Antes de mexer no código, pergunte: alguém fechou a janela manualmente?
+   Apareceu algum popup que não foi respondido?
+
+3. **Popup "Acessar outros apps e serviços neste dispositivo" (permissão nativa do Chrome).**
+   É a "Local Network Access" do Chrome — o portal faz alguma checagem local. Resolvido usando
+   `launch_persistent_context(RPA_BROWSER_PROFILE_DIR, ...)` em vez de `launch()` + `new_context()`:
+   um perfil de navegador novo a cada execução parece um "dispositivo desconhecido" pro portal. Com
+   perfil persistente, a aprovação feita uma vez (numa rodada manual com HEADLESS=false) fica salva.
+   **Nunca commitar a pasta do perfil** — tem cookies de sessão reais (já no `.gitignore`).
+
+4. **Login trava esperando resposta que nunca chega, mesmo com usuário/senha certos.**
+   O WebAutorizador dispara um `confirm()` nativo do navegador quando já existe outra sessão logada
+   ("Usuário já autenticado em outra estação..."). Por padrão o Playwright **fecha esse tipo de popup
+   sozinho sem executar nada** (equivalente a Cancelar) se não houver um listener registrado. Resolvido
+   com `page.on("dialog", lambda dialog: dialog.accept())`, registrado uma vez por página antes do login.
+
+5. **Clicar em "Download data" no Looker não baixa nada (timeout esperando o evento de download).**
+   Abre um modal com dropdown de formato (CSV por padrão) e um botão "Download" que precisa ser
+   clicado à parte — não baixa direto no primeiro clique.
+
+6. **Botões do Looker identificados por classe CSS quebram a cada deploy.**
+   O Looker usa styled-components com hash (`sc-xxxx`) que mudam. Use sempre `aria-label` — é estável.
+   Padrão confirmado: cada tile tem um botão `aria-label="{Nome da Tile} - Tile actions"`.
+
+7. **`pd.read_csv(file_path, sep=None, engine="python")` quebra com `ParserError` em CSVs do Looker.**
+   O sniffer de separador do engine Python se confunde com valores monetários entre aspas contendo
+   vírgula de milhar (`"R$ 653,440.00"`). Use `pd.read_csv(file_path)` simples (engine C, lida com
+   aspas corretamente).
+
+8. **Colunas monetárias do Looker vêm como texto, não número.**
+   Formato `"R$ 1,234.56"` (vírgula de milhar, ponto decimal — não é o padrão BR de exibição, é o
+   locale do Looker). Use `PortalRpaConnector._parse_brl_value()` em vez de `float()` direto.
+
+9. **Colunas de "mês" tipo `Anomes Apuracao` vêm como `202608` (AAAAMM), não uma data.**
+   `pd.to_datetime` sem formato explícito não trata bem. Use o campo opcional `date_format` no
+   `column_mapping` (ex.: `"%Y%m"`), já suportado em `_parse_report`.
+
+10. **Popup nativo "Salvar senha?" do Chrome interrompe execução sem supervisão.**
+    Desativado via `args=["--disable-save-password-bubble"]` no `launch_persistent_context`.
+
+## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
+
+Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por
+política de proxy). Precisa rodar na máquina de quem tem acesso real ao portal:
+
+```powershell
+$env:HEADLESS="false"
+$env:RPA_ARTIFACTS_DIR="./artifacts"
+$env:RPA_BROWSER_PROFILE_DIR="./browser_profile"
+python -m app.services.connectors.portal_rpa --debug
+```
+
+Com `HEADLESS=false` dá pra ver o navegador passo a passo. Em qualquer falha, o script salva
+`failure_<timestamp>.png` e `.html` em `RPA_ARTIFACTS_DIR` — peça esses arquivos antes de tentar
+adivinhar o que deu errado (não escreva seletor novo às cegas).
+
+## Onde documentar o que for descoberto
+
+Seletores e decisões vão em `backend/app/services/connectors/portal_selectors.json`, dentro de campos
+`_origem`/`_atencao`/`_nota` — não só no código. Um `column_mapping`/`export_button_selector` ainda não
+mapeado fica como `null`; o conector já pula esses graciosamente (loga e segue) em vez de quebrar — siga
+esse padrão pra qualquer relatório novo incompleto, não trave a execução inteira por causa de uma tile
+ainda não mapeada.
+
+## Linha que não se cruza
+
+O portal reage diferente quando percebe automação (ver item 3 acima). Isso é proteção antifraude
+deliberada de uma instituição financeira. **Não tente mascarar/disfarçar a automação** (stealth plugins,
+falsificar fingerprint, etc.) pra escapar dessas checagens — resolva reaproveitando sessão legítima
+(perfil persistente, que é o que já fizemos), nunca simulando ser humano quando não é. Se o portal
+continuar bloqueando mesmo assim, a resposta é confirmar com o C6 se a automação é permitida — não
+contornar a defesa deles. Isso ainda está pendente de confirmação formal (ver skill `project-context`).
