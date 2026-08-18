@@ -157,7 +157,7 @@ class PortalRpaConnector(DataConnector):
 
         page.click(login_cfg["submit_selector"])
 
-        deadline = time.monotonic() + 20
+        deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
             if success_selector and page.locator(success_selector).first.count() > 0:
                 logger.info("Login RPA no portal C6 concluído com sucesso (menu detectado).")
@@ -181,7 +181,7 @@ class PortalRpaConnector(DataConnector):
 
         raise PortalLoginError(
             "Timeout aguardando resposta do login no portal C6 — nem sucesso "
-            "(mudança de URL) nem mensagem de erro foram detectados em 20s. "
+            "(mudança de URL) nem mensagem de erro foram detectados em 60s. "
             "O portal pode ter mudado; revise portal_selectors.json."
         )
 
