@@ -282,6 +282,11 @@ class PortalRpaConnector(DataConnector):
             ) as download_info:
                 page.get_by_role("button", name=f"{tile['name']} - Tile actions").click()
                 page.get_by_text(download_menu_item, exact=True).click()
+                # "Download data" abre um modal (formato do arquivo, já vem CSV
+                # selecionado por padrão) em vez de baixar direto — confirmado
+                # em teste real. Falta confirmar clicando no botão "Download"
+                # do modal.
+                page.get_by_role("button", name="Download", exact=True).click()
             download = download_info.value
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

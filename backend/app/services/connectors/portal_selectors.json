@@ -41,8 +41,9 @@
       "('this month') precisa ser conferido rodando com HEADLESS=false — o padrão observado na tela era",
       "'is in the last 6 months' (sintaxe Looker 'N months'); não confirmamos ainda se 'this month' produz o",
       "mesmo resultado que selecionar manualmente o mês corrente, ou se o valor correto é '1 months'.",
-      "PENDENTE VALIDAR: clicar em 'Download data' pode abrir um modal de confirmação/formato em vez de",
-      "baixar direto — o HTML capturado foi com o menu fechado, não vimos o resultado do clique."
+      "CONFIRMADO em teste real (2026-08-18): 'Download data' abre um modal com dropdown de formato (CSV vem",
+      "selecionado por padrão) e um botão 'Download' que precisa ser clicado pra confirmar — o conector já",
+      "trata isso."
     ],
     "bootstrap_path": "/WebAutorizador/MenuWeb/Relatorios/Documentacao/UI.RelatorioGerencialExterno.aspx",
     "base_url": "https://c6bank.cloud.looker.com",
