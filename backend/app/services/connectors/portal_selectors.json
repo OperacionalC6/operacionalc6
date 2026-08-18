@@ -71,11 +71,14 @@
             "key": "analitico",
             "name": "Comissão À Vista - AnalÍtico",
             "column_mapping": {
-              "date_column": null,
-              "value_column": null,
+              "_origem": "Extraído do CSV real baixado em 2026-08-18. Colunas monetárias vêm como texto ('R$ 1,234.56' — vírgula de milhar, ponto decimal), tratado em _parse_brl_value.",
+              "date_column": "Anomes Apuracao",
+              "date_format": "%Y%m",
+              "value_column": "R$ Comissão À Vista Bruto - Parceiro",
               "metric_name": "comissao_avista",
               "team_column": null,
-              "dimension_columns": []
+              "_team_nota": "Não há coluna de equipe interna nesse dataset (é por parceiro/correspondente externo) — se precisar segmentar por equipe interna, será outra fonte.",
+              "dimension_columns": ["Cd Contrato", "Status Contrato", "Parceiro", "Lojista", "Produto", "Master"]
             }
           },
           {

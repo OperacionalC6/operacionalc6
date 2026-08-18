@@ -306,6 +306,19 @@ class PortalRpaConnector(DataConnector):
         return results
 
     @staticmethod
+    def _parse_brl_value(raw: object) -> float:
+        """
+        Colunas monetárias dos exports Looker vêm formatadas como texto, ex.:
+        'R$ 653,440.00' (vírgula de milhar, ponto decimal — não é o formato
+        BR tradicional, é o locale do Looker). Remove o prefixo e a vírgula
+        antes de converter.
+        """
+        if isinstance(raw, (int, float)):
+            return float(raw)
+        cleaned = str(raw).replace("R$", "").replace(",", "").strip()
+        return float(cleaned)
+
+    @staticmethod
     def _parse_report(
         file_path: Path, report_cfg: dict, date_from: date, date_to: date
     ) -> list[ConnectorRecord]:
@@ -314,9 +327,16 @@ class PortalRpaConnector(DataConnector):
         if file_path.suffix.lower() in (".xlsx", ".xls"):
             df = pd.read_excel(file_path)
         else:
-            df = pd.read_csv(file_path, sep=None, engine="python")
+            # Sem sep=None/engine="python": os exports do Looker têm valores
+            # monetários entre aspas com vírgula de milhar dentro (ex.: "R$
+            # 653,440.00") — o sniffer de separador do engine python se
+            # confunde com isso. O parser padrão (C) já lida bem com aspas.
+            df = pd.read_csv(file_path)
 
-        df[mapping["date_column"]] = pd.to_datetime(df[mapping["date_column"]]).dt.date
+        date_format = mapping.get("date_format")
+        df[mapping["date_column"]] = pd.to_datetime(
+            df[mapping["date_column"]], format=date_format
+        ).dt.date
         df = df[(df[mapping["date_column"]] >= date_from) & (df[mapping["date_column"]] <= date_to)]
 
         records: list[ConnectorRecord] = []
@@ -329,7 +349,7 @@ class PortalRpaConnector(DataConnector):
                     team_name=str(row[mapping["team_column"]]) if mapping.get("team_column") else None,
                     metric_date=row[mapping["date_column"]],
                     metric_name=mapping["metric_name"],
-                    value=float(row[mapping["value_column"]]),
+                    value=PortalRpaConnector._parse_brl_value(row[mapping["value_column"]]),
                     dimensions=dimensions or None,
                 )
             )
