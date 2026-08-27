@@ -1,0 +1,61 @@
+# Blueprint do Render — descreve toda a infraestrutura de backend como código.
+# Pra usar: no dashboard do Render, "New" > "Blueprint", aponta pro repositório
+# GitHub/OperacionalC6/operacionalc6. O Render cria o serviço web e o banco
+# Postgres automaticamente. Variáveis marcadas "sync: false" são segredos —
+# o Render vai pedir pra preencher na primeira vez, nunca ficam neste arquivo
+# (ver skill security-access).
+#
+# O robô do RPA roda dentro do próprio serviço web (agendador em processo,
+# ver app/services/scheduler.py) — não precisa de um Background Worker
+# separado. O disco persistente guarda o perfil do navegador (evita repetir
+# a verificação de dispositivo do C6 a cada deploy — ver skill rpa-conventions).
+
+services:
+  - type: web
+    name: operacionalc6-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    disk:
+      name: rpa-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: operacionalc6-db
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: BACKEND_CORS_ORIGINS
+        sync: false
+      - key: DATA_SOURCE_MODE
+        value: portal_rpa
+      - key: C6_PORTAL_USERNAME
+        sync: false
+      - key: C6_PORTAL_PASSWORD
+        sync: false
+      - key: PIPELINE_CRON_SCHEDULES
+        value: "08:00,13:00,18:00"
+      - key: PIPELINE_TIMEZONE
+        value: America/Sao_Paulo
+      - key: ENVIRONMENT
+        value: production
+      - key: HEADLESS
+        value: "true"
+      - key: RPA_ARTIFACTS_DIR
+        value: /app/data/artifacts
+      - key: RPA_BROWSER_PROFILE_DIR
+        value: /app/data/browser_profile
+
+databases:
+  - name: operacionalc6-db
+    plan: starter
+    region: oregon

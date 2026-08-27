@@ -10,17 +10,32 @@ description: Regras de segurança, controle de acesso (RBAC) e tratamento de seg
 O painel é uso interno: só o dono do negócio e seus consultores autorizados podem ver os dados —
 nenhum acesso externo/público. Isso guia toda decisão de auth abaixo.
 
-## Autenticação decidida
+## Autenticação — implementada (2026-08-27)
 
 A empresa **não tem domínio corporativo** (usa Gmail pessoal — ver skill `project-context`), então não
-dá pra restringir login por domínio Google Workspace. Decisão: **login via Google + lista de e-mails
-autorizados** mantida pelo admin dentro do próprio sistema (usa o RBAC já modelado em
-`backend/app/models/user.py`). Nunca aceitar cadastro público/self-service — toda conta é criada/convidada
-por um admin.
+dá pra restringir login por domínio Google Workspace. Implementado: **login via Google + lista de
+e-mails autorizados**, onde a "lista" É a própria tabela `users` (não existe uma allowlist separada):
 
-Se a empresa adquirir domínio próprio + Google Workspace no futuro, revisitar para restrição por domínio
-(`hd` parameter no OAuth) como camada extra — mas a lista de e-mails autorizados continua sendo a
-autorização de fato, não o domínio.
+- Modelo `User` (`backend/app/models/user.py`) **não tem campo de senha** — não existe cadastro/senha
+  própria, e é proposital, não uma lacuna a preencher depois.
+- Fluxo: frontend usa o Google Identity Services (botão "Entrar com Google"), recebe um ID token,
+  manda pro backend em `POST /auth/google` (`backend/app/api/routes/auth.py`).
+- Backend verifica o ID token com `verify_google_id_token()` (`backend/app/core/security.py`, usa a lib
+  `google-auth`, valida assinatura + `aud` contra `GOOGLE_OAUTH_CLIENT_ID` + `email_verified=True`).
+- Se o e-mail verificado bate com um `User` existente com `is_active=True`, emite os JWT access/refresh
+  de sempre. Se não existir ou estiver inativo → 403 explícito ("e-mail não autorizado"), nunca cria
+  usuário na hora.
+- **Autorizar alguém = admin criar o registro em `users`** via `POST /users` (rota já protegida por
+  `require_admin`) com o e-mail Google da pessoa. **Revogar acesso = `is_active=False`**, não precisa
+  mexer no Google.
+- `GOOGLE_OAUTH_CLIENT_ID` vem de um OAuth Client "Web application" criado no Google Cloud Console —
+  mesmo valor no backend (env var) e no frontend (`NEXT_PUBLIC_GOOGLE_CLIENT_ID`), não é segredo mas
+  não deve ser hardcoded (varia por ambiente/projeto Google Cloud).
+- `ADMIN_EMAIL` no ambiente do backend é o que o script `app/seed.py` usa pra criar o PRIMEIRO usuário
+  (bootstrap) — sem isso definido antes do primeiro start, ninguém consegue logar, nem o dono.
+
+Se a empresa adquirir domínio próprio + Google Workspace no futuro, dá pra adicionar checagem por domínio
+(`hd` claim do token) como camada extra — mas o registro em `users` continua sendo a autorização de fato.
 
 ## RBAC (já modelado no backend)
 

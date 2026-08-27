@@ -1,9 +1,10 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
+class GoogleLoginRequest(BaseModel):
+    # ID token (JWT) que o Google Identity Services devolve pro frontend depois do
+    # usuário escolher a conta — não é senha nem código, é assinado pelo Google.
+    id_token: str
 
 
 class TokenResponse(BaseModel):
@@ -14,8 +15,3 @@ class TokenResponse(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
-
-
-class ChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str

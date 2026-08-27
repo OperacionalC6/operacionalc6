@@ -1,24 +1,27 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.core.config import get_settings
 
 settings = get_settings()
 
-_pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
-
 TokenType = Literal["access", "refresh"]
 
 
-def hash_password(password: str) -> str:
-    return _pwd_context.hash(password)
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return _pwd_context.verify(plain_password, hashed_password)
+def verify_google_id_token(token: str) -> dict[str, Any]:
+    """
+    Verifica um ID token emitido pelo Google Sign-In (assinatura, expiração, e que
+    foi emitido para o nosso GOOGLE_OAUTH_CLIENT_ID). Levanta ValueError se inválido
+    — quem chamar deve tratar isso como falha de autenticação (401), nunca deixar
+    passar.
+    """
+    return google_id_token.verify_oauth2_token(
+        token, google_requests.Request(), settings.google_oauth_client_id
+    )
 
 
 def create_token(subject: str, token_type: TokenType, extra_claims: dict[str, Any] | None = None) -> str:

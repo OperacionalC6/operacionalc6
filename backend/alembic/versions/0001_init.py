@@ -34,7 +34,6 @@ def upgrade() -> None:
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column("email", sa.String(255), nullable=False, unique=True),
         sa.Column("full_name", sa.String(200), nullable=False),
-        sa.Column("hashed_password", sa.String(255), nullable=False),
         sa.Column("role", user_role, nullable=False, server_default="membro"),
         sa.Column(
             "team_id",
@@ -43,7 +42,6 @@ def upgrade() -> None:
             nullable=True,
         ),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default=sa.true()),
-        sa.Column("must_change_password", sa.Boolean, nullable=False, server_default=sa.true()),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column("last_login_at", sa.DateTime(timezone=True), nullable=True),
     )

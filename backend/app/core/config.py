@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
 
+    # ID do OAuth Client (tipo "Web application") criado no Google Cloud Console.
+    # Usado tanto pelo frontend (botão "Entrar com Google") quanto pelo backend
+    # (validar que o token recebido foi mesmo emitido pra este app). Ver security-access skill.
+    google_oauth_client_id: str
+
     backend_cors_origins: list[str] = ["http://localhost:3000"]
 
     data_source_mode: str = "portal_rpa"  # "api_corban" | "portal_rpa"
@@ -34,9 +39,10 @@ class Settings(BaseSettings):
     pipeline_cron_schedules: str = "08:00,13:00,18:00"
     pipeline_timezone: str = "America/Sao_Paulo"
 
-    # Usado apenas pelo script de seed para criar o primeiro usuário admin.
+    # E-mail do primeiro admin, usado só pelo script de seed pra criar o registro
+    # inicial em `users` — sem esse registro, ninguém consegue logar (nem o próprio
+    # dono), já que login exige que o e-mail já exista cadastrado. Ver security-access skill.
     admin_email: str | None = None
-    admin_password: str | None = None
 
     @property
     def pipeline_schedule_list(self) -> list[str]:

@@ -16,21 +16,24 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
 
 ## Arquitetura decidida (não redecida sem necessidade)
 
-- **Backend**: FastAPI + Postgres, já escrito em `backend/app/`. Login JWT, RBAC (admin/gestor veem tudo,
-  membro só vê sua equipe — ver `security-access` skill), log de auditoria, camada de conectores plugável
-  (`DataConnector`: RPA hoje, API oficial do C6 como stub pra quando/se sair homologação).
+- **Backend**: FastAPI + Postgres, já escrito em `backend/app/`. Auth via Google Sign-In + JWT próprio
+  (implementado — ver `security-access` skill), RBAC (admin/gestor veem tudo, membro só vê sua equipe),
+  log de auditoria, camada de conectores plugável (`DataConnector`: RPA hoje, API oficial do C6 como
+  stub pra quando/se sair homologação).
+- **O robô do RPA roda dentro do próprio serviço web**, não num worker separado — o agendador
+  (`app/services/scheduler.py`, APScheduler) inicia junto com a API no `lifespan` do FastAPI
+  (`app/main.py`). Um serviço só no Render (web) resolve API + robô; não precisa de Background Worker.
 - **Frontend**: ainda não existe. Decidido: Next.js, hospedado na Vercel, **plano gratuito (Hobby)** —
   sem desvantagem prática pra esse projeto, migrar pra Pro é só questão de billing, não bloqueia nada.
-- **Hospedagem backend+worker RPA+Postgres**: Render, **plano PAGO desde o início** (decisão do usuário
-  em 2026-08-18 — preferiu simplicidade de um provedor só a economizar rodando o robô localmente/banco
-  temporário). Isso evita: soninho do plano grátis no backend, expiração do Postgres grátis, e a
-  necessidade de manter o robô do RPA rodando na máquina do usuário — ele já pode morar no Render desde
-  o começo, com disco persistente pro perfil do navegador (ver `rpa-conventions`).
+- **Hospedagem backend+Postgres**: Render, **plano PAGO desde o início** (decisão do usuário em
+  2026-08-18 — preferiu simplicidade de um provedor só a economizar rodando o robô localmente/banco
+  temporário). Infra descrita como código em `render.yaml` (raiz do repo) — Blueprint do Render, cria
+  o serviço web + Postgres automaticamente quando conectado ao repositório.
 - **Domínio**: a empresa NÃO tem domínio próprio (usa Gmail pessoal). Decidido usar os subdomínios
   gratuitos do Render/Vercel por enquanto — domínio próprio é opcional, adicionar depois se quiser.
-- **Autenticação**: login via Google + lista de e-mails autorizados mantida pelo admin (não dá pra restringir
-  por domínio Google Workspace porque não existe domínio corporativo — se a empresa adquirir um domínio/
-  Workspace no futuro, revisitar essa decisão).
+- **Autenticação**: login via Google Sign-In implementado (`POST /auth/google`) — sem senha própria no
+  sistema. Autorização = existir um registro em `users` com `is_active=True` (mantido pelo admin via
+  `POST /users`), não uma lista separada. Detalhes completos e o porquê na skill `security-access`.
 - **Contas de nuvem**: TUDO deve ser criado com conta/e-mail da empresa, nunca a conta pessoal do usuário
   nem rodando na máquina dele. Código já está na organização GitHub `OperacionalC6` (transferido de
   `sguedesfelipe/operacionalc6` em 2026-08-18). Contas de Render/Vercel: ver "Status atual".
@@ -51,11 +54,12 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
 - Mapear os outros relatórios do hub "One Page - Auto" (ex.: Apuração Comissão Carteira, Apuração Parceiro
   - Histórica, Resumo Apuração Parceiro 2.0, Painel Visita - Mercado, e outros cards fora da aba "Auto")
 - Frontend (não existe nenhuma linha ainda)
-- Configurar os serviços de verdade no Render (web service do backend, Postgres, worker do RPA) —
-  conta existe, nenhum serviço criado ainda
+- Criar o OAuth Client do Google (Cloud Console) — necessário antes do deploy funcionar de verdade
+  (é o `GOOGLE_OAUTH_CLIENT_ID`); ninguém criou ainda
+- Conectar o `render.yaml` no dashboard do Render (Blueprint) e preencher as variáveis marcadas
+  `sync: false` (segredos) — arquivo já existe no repo, só falta rodar o deploy de fato
 - Importar/publicar o projeto na Vercel — conta e conexão com o GitHub prontas, mas sem frontend pra
   publicar ainda
-- Deploy de qualquer coisa em produção
 - Confirmação formal com o C6 de que a automação é sancionada (ver `rpa-conventions` — o portal reage
   diferente a navegador automatizado; ainda não temos essa confirmação do banco)
 
@@ -66,6 +70,18 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
   configurado ainda, só a conta
 - Conta da Vercel criada (login com Google; GitHub conectado depois via "Login Connections", dando acesso
   à organização `OperacionalC6`) — plano gratuito (Hobby)
+
+**Feito (backend pronto pra deploy, 2026-08-27):**
+- Login trocado de senha própria pra Google Sign-In (`POST /auth/google`) — ver skill `security-access`
+  pra detalhes de implementação
+- `render.yaml` (Blueprint) criado na raiz do repo — declara o serviço web (Docker, disco persistente
+  pro perfil do RPA) e o Postgres
+- `backend/entrypoint.sh` criado — roda `alembic upgrade head` + `python -m app.seed` antes de subir o
+  uvicorn, necessário porque é um serviço gerenciado (ninguém vai digitar esses comandos manualmente)
+- Corrigida dependência faltante (`pydantic[email]`) que impedia o backend de subir
+- Migração inicial (`0001_init`) ajustada pra remover campos de senha (nunca foi rodada contra um banco
+  real, então editei direto em vez de empilhar migração nova — não fazer isso depois que a coluna tiver
+  rodado em produção de verdade)
 
 ## Como uma sessão nova deve retomar
 

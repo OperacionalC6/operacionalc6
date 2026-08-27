@@ -2,15 +2,9 @@ import os
 
 os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://user:pass@localhost:5432/db")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key")
+os.environ.setdefault("GOOGLE_OAUTH_CLIENT_ID", "test-client-id.apps.googleusercontent.com")
 
-from app.core.security import create_token, decode_token, hash_password, verify_password  # noqa: E402
-
-
-def test_password_hash_roundtrip():
-    hashed = hash_password("minha-senha-segura")
-    assert hashed != "minha-senha-segura"
-    assert verify_password("minha-senha-segura", hashed)
-    assert not verify_password("senha-errada", hashed)
+from app.core.security import create_token, decode_token  # noqa: E402
 
 
 def test_access_token_roundtrip():

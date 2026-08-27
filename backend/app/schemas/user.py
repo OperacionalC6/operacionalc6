@@ -20,9 +20,10 @@ class UserOut(BaseModel):
 
 
 class UserCreate(BaseModel):
+    # Sem senha — o admin autoriza um e-mail, e a pessoa entra com "Login com Google"
+    # usando esse mesmo e-mail. É assim que a lista de acesso é controlada.
     email: EmailStr
     full_name: str
-    password: str
     role: UserRole = UserRole.MEMBRO
     team_id: uuid.UUID | None = None
 

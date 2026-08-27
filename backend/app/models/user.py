@@ -23,9 +23,11 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Não guardamos senha — login é só via Google Sign-In (ver security-access skill).
+    # Um usuário só consegue entrar se já existir aqui com is_active=True; é assim que
+    # a "lista de e-mails autorizados" é implementada: cadastro pelo admin, não senha.
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     full_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(Enum(UserRole, name="user_role"), nullable=False, default=UserRole.MEMBRO)
 
     team_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -34,7 +36,6 @@ class User(Base):
     team: Mapped["Team"] = relationship(back_populates="users")  # noqa: F821
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    must_change_password: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

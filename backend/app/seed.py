@@ -2,15 +2,18 @@
 Script de inicialização: garante que exista ao menos um usuário admin.
 Idempotente — pode ser executado a cada start do container sem duplicar dados.
 
+Sem esse registro, NINGUÉM consegue logar — login exige que o e-mail já exista
+cadastrado em `users` com is_active=True (não há senha nem cadastro público, ver
+security-access skill). Defina ADMIN_EMAIL no ambiente com o Gmail de quem vai
+administrar o sistema antes do primeiro start.
+
 Executar com: python -m app.seed
 """
 
 import logging
-import secrets
 
 from app.core.config import get_settings
 from app.core.logging import configure_logging
-from app.core.security import hash_password
 from app.db.session import SessionLocal
 from app.models.user import User, UserRole
 
@@ -26,25 +29,22 @@ def seed() -> None:
             logger.info("Seed ignorado: já existem usuários cadastrados.")
             return
 
-        admin_email = (settings.admin_email or "admin@suaempresa.com.br").lower()
-        admin_password = settings.admin_password or secrets.token_urlsafe(16)
+        if not settings.admin_email:
+            logger.warning(
+                "ADMIN_EMAIL não definido — nenhum usuário admin foi criado. "
+                "Ninguém conseguirá logar até definir ADMIN_EMAIL e rodar o seed de novo."
+            )
+            return
 
         admin = User(
-            email=admin_email,
+            email=settings.admin_email.lower(),
             full_name="Administrador",
-            hashed_password=hash_password(admin_password),
             role=UserRole.ADMIN,
-            must_change_password=True,
         )
         db.add(admin)
         db.commit()
 
-        logger.warning(
-            "Usuário admin criado: %s | senha inicial: %s "
-            "— TROQUE a senha no primeiro login (ela não será exibida novamente).",
-            admin_email,
-            admin_password,
-        )
+        logger.info("Usuário admin criado: %s — já pode logar com 'Entrar com Google'.", admin.email)
     finally:
         db.close()
 

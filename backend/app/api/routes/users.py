@@ -3,7 +3,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_client_ip, require_admin, require_full_access
-from app.core.security import hash_password
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate, UserOut, UserUpdate
@@ -30,7 +29,6 @@ def create_user(
     user = User(
         email=payload.email.lower(),
         full_name=payload.full_name,
-        hashed_password=hash_password(payload.password),
         role=payload.role,
         team_id=payload.team_id,
     )
