@@ -51,13 +51,21 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
 - Mapear os outros relatórios do hub "One Page - Auto" (ex.: Apuração Comissão Carteira, Apuração Parceiro
   - Histórica, Resumo Apuração Parceiro 2.0, Painel Visita - Mercado, e outros cards fora da aba "Auto")
 - Frontend (não existe nenhuma linha ainda)
-- Criação das contas de nuvem da empresa (Render pago, Vercel grátis) — em andamento em 2026-08-18
+- Configurar os serviços de verdade no Render (web service do backend, Postgres, worker do RPA) —
+  conta existe, nenhum serviço criado ainda
+- Importar/publicar o projeto na Vercel — conta e conexão com o GitHub prontas, mas sem frontend pra
+  publicar ainda
 - Deploy de qualquer coisa em produção
 - Confirmação formal com o C6 de que a automação é sancionada (ver `rpa-conventions` — o portal reage
   diferente a navegador automatizado; ainda não temos essa confirmação do banco)
 
 **Feito (infra/organização, 2026-08-18):**
-- Organização `OperacionalC6` criada no GitHub e repositório transferido pra lá
+- Organização `OperacionalC6` criada no GitHub e repositório transferido pra lá (app do Claude reinstalado
+  lá — precisou reinstalar porque o app não segue automaticamente a transferência de dono)
+- Conta da Render criada (login GitHub, plano pago, cartão da empresa cadastrado) — nenhum serviço
+  configurado ainda, só a conta
+- Conta da Vercel criada (login com Google; GitHub conectado depois via "Login Connections", dando acesso
+  à organização `OperacionalC6`) — plano gratuito (Hobby)
 
 ## Como uma sessão nova deve retomar
 
