@@ -54,8 +54,11 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
 - Mapear os outros relatórios do hub "One Page - Auto" (ex.: Apuração Comissão Carteira, Apuração Parceiro
   - Histórica, Resumo Apuração Parceiro 2.0, Painel Visita - Mercado, e outros cards fora da aba "Auto")
 - Frontend (não existe nenhuma linha ainda)
-- Criar o OAuth Client do Google (Cloud Console) — necessário antes do deploy funcionar de verdade
-  (é o `GOOGLE_OAUTH_CLIENT_ID`); ninguém criou ainda
+- ~~Criar o OAuth Client do Google~~ — feito em 2026-08-27. `GOOGLE_OAUTH_CLIENT_ID` =
+  `1038135927680-3tvpk42jdnk1v3ab84rsfciqlbnelsdo.apps.googleusercontent.com` (não é segredo, pode
+  usar direto no backend e no frontend). "Authorized JavaScript origins" hoje só tem
+  `http://localhost:3000` — precisa voltar lá e adicionar a URL de verdade da Vercel assim que o
+  frontend for publicado.
 - Conectar o `render.yaml` no dashboard do Render (Blueprint) e preencher as variáveis marcadas
   `sync: false` (segredos) — arquivo já existe no repo, só falta rodar o deploy de fato
 - Importar/publicar o projeto na Vercel — conta e conexão com o GitHub prontas, mas sem frontend pra
