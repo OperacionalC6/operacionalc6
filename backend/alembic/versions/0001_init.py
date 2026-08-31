@@ -26,8 +26,11 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
 
+    # Não chamar user_role.create(...) explicitamente aqui: create_table já cria o
+    # tipo enum sozinho ao usá-lo numa coluna. Criar os dois é justamente o que
+    # causa "type already exists" se a migration for reexecutada depois de uma
+    # falha parcial (aconteceu no primeiro deploy real, por isso este comentário).
     user_role = postgresql.ENUM("admin", "gestor", "membro", name="user_role")
-    user_role.create(op.get_bind(), checkfirst=True)
 
     op.create_table(
         "users",
@@ -68,9 +71,7 @@ def upgrade() -> None:
     op.create_index("ix_audit_logs_created_at", "audit_logs", ["created_at"])
 
     pipeline_status = postgresql.ENUM("running", "success", "failed", name="pipeline_status")
-    pipeline_status.create(op.get_bind(), checkfirst=True)
     pipeline_trigger = postgresql.ENUM("schedule", "manual", name="pipeline_trigger")
-    pipeline_trigger.create(op.get_bind(), checkfirst=True)
 
     op.create_table(
         "pipeline_runs",
