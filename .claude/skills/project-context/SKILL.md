@@ -110,17 +110,31 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
   mostrando o Swagger UI completo ("Operacional C6 — API", OAS 3.1) com as rotas de `auth`, `teams` e
   `users`. Backend considerado 100% pronto pra produção — próximo marco é o frontend.
 
-## Próximo passo: frontend mínimo (Task #5, ainda não iniciado)
+## Frontend mínimo (Task #5)
 
-Seguindo a sequência "walking skeleton" acordada com o usuário (backend pronto → frontend mínimo →
-validar ponta a ponta → só depois mapear os relatórios que faltam):
+**Feito (código, 2026-08-31):** scaffold do Next.js criado em `frontend/` (App Router, TypeScript,
+Tailwind). Build e lint passam. Duas páginas:
+- `/` (`frontend/src/app/page.tsx`): tela de login com o botão do Google Identity Services
+  (script `accounts.google.com/gsi/client`); ao autenticar, chama `POST /auth/google` e guarda os
+  tokens.
+- `/dashboard` (`frontend/src/app/dashboard/page.tsx`): busca `GET /auth/me` + `GET /metrics` e
+  mostra total do período + tabela. Redireciona pra `/` se não houver token.
+- `frontend/src/lib/api.ts`: client fetch com renovação automática via `POST /auth/refresh` em
+  qualquer 401.
+- Tokens guardados em `localStorage` (tradeoff aceito pra essa fase — se algum dia entrar script de
+  terceiro no frontend, migrar pra cookie httpOnly setado pelo backend).
+- Variáveis de ambiente do frontend (ver `frontend/.env.local.example`): `NEXT_PUBLIC_API_URL` e
+  `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (mesmo Client ID do backend, não é segredo).
 
-- Next.js, hospedado na Vercel (conta e conexão GitHub já prontas — ver acima).
-- Login via Google Sign-In (Google Identity Services no client), token enviado pra `POST /auth/google`.
-- Um dashboard simples mostrando os dados já validados (comissão à vista / tile "Analítico").
-- Depois de publicar: voltar no Google Cloud Console e adicionar a URL real da Vercel em
-  "Authorized JavaScript origins" (hoje só tem `http://localhost:3000`), e atualizar
-  `BACKEND_CORS_ORIGINS` no Render (hoje só tem o placeholder localhost).
+**Pendente (passos manuais na Vercel/Google Cloud, ainda não feitos):**
+1. Importar o projeto na Vercel apontando pro diretório `frontend/` (Root Directory), com as duas
+   env vars acima.
+2. Depois que a Vercel gerar a URL real (tipo `operacionalc6.vercel.app`): adicionar essa URL em
+   "Authorized JavaScript origins" do OAuth Client no Google Cloud Console (hoje só tem
+   `http://localhost:3000`).
+3. Atualizar `BACKEND_CORS_ORIGINS` no Render pra incluir essa mesma URL da Vercel (hoje só tem o
+   placeholder localhost) — sem isso o navegador bloqueia as chamadas do frontend pro backend
+   (CORS).
 
 ## Como uma sessão nova deve retomar
 
