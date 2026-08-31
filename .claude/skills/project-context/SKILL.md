@@ -106,6 +106,21 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
 - **Se o banco ficar num estado quebrado de novo** (ex.: tipo enum criado mas tabela não): como não tem
   dado real ainda, o caminho mais simples é apagar o banco (`operacionalc6-db`, NÃO o web service) no
   Render e rodar "Manual Sync" no Blueprint pra recriar do zero — não precisa mexer em SQL manualmente.
+- **Confirmado pelo usuário, funcionando de ponta a ponta**: `GET /health` → `{"status":"ok"}` e `GET /docs`
+  mostrando o Swagger UI completo ("Operacional C6 — API", OAS 3.1) com as rotas de `auth`, `teams` e
+  `users`. Backend considerado 100% pronto pra produção — próximo marco é o frontend.
+
+## Próximo passo: frontend mínimo (Task #5, ainda não iniciado)
+
+Seguindo a sequência "walking skeleton" acordada com o usuário (backend pronto → frontend mínimo →
+validar ponta a ponta → só depois mapear os relatórios que faltam):
+
+- Next.js, hospedado na Vercel (conta e conexão GitHub já prontas — ver acima).
+- Login via Google Sign-In (Google Identity Services no client), token enviado pra `POST /auth/google`.
+- Um dashboard simples mostrando os dados já validados (comissão à vista / tile "Analítico").
+- Depois de publicar: voltar no Google Cloud Console e adicionar a URL real da Vercel em
+  "Authorized JavaScript origins" (hoje só tem `http://localhost:3000`), e atualizar
+  `BACKEND_CORS_ORIGINS` no Render (hoje só tem o placeholder localhost).
 
 ## Como uma sessão nova deve retomar
 
