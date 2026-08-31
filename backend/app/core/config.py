@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,6 +11,17 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     database_url: str
+
+    @field_validator("database_url")
+    @classmethod
+    def _use_psycopg3_driver(cls, v: str) -> str:
+        # Provedores gerenciados (Render, etc.) entregam a connection string sem
+        # driver explícito ("postgresql://..."), que o SQLAlchemy interpreta como
+        # psycopg2 por padrão — mas usamos psycopg3 (ver requirements.txt). Sem
+        # isso, tanto a API quanto as migrations do Alembic falham ao conectar.
+        if v.startswith("postgresql://"):
+            return v.replace("postgresql://", "postgresql+psycopg://", 1)
+        return v
 
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
