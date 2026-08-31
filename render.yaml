@@ -57,5 +57,8 @@ services:
 
 databases:
   - name: operacionalc6-db
-    plan: starter
+    # Render renomeou os planos de banco (não é mais starter/standard/pro).
+    # basic-256mb é o menor plano pago — mais que suficiente pro volume de
+    # dados desse projeto por enquanto; dá pra subir de plano depois sem drama.
+    plan: basic-256mb
     region: oregon
