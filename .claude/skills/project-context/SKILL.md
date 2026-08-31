@@ -59,8 +59,6 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
   usar direto no backend e no frontend). "Authorized JavaScript origins" hoje só tem
   `http://localhost:3000` — precisa voltar lá e adicionar a URL de verdade da Vercel assim que o
   frontend for publicado.
-- Conectar o `render.yaml` no dashboard do Render (Blueprint) e preencher as variáveis marcadas
-  `sync: false` (segredos) — arquivo já existe no repo, só falta rodar o deploy de fato
 - Importar/publicar o projeto na Vercel — conta e conexão com o GitHub prontas, mas sem frontend pra
   publicar ainda
 - Confirmação formal com o C6 de que a automação é sancionada (ver `rpa-conventions` — o portal reage
@@ -85,6 +83,29 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
 - Migração inicial (`0001_init`) ajustada pra remover campos de senha (nunca foi rodada contra um banco
   real, então editei direto em vez de empilhar migração nova — não fazer isso depois que a coluna tiver
   rodado em produção de verdade)
+
+**Feito (backend NO AR em produção, 2026-08-31):** 🎉
+- Blueprint conectado no Render, banco Postgres + serviço web rodando de verdade em
+  `https://operacionalc6-backend.onrender.com`
+- Três bugs reais só descobertos rodando contra o Render de verdade (nenhum tinha sido testado contra
+  Postgres real até então) — todos corrigidos, documentados em detalhe como lições pra próxima vez que
+  alguém mexer nesses arquivos:
+  1. **Driver do Postgres**: a connection string do Render vem sem driver explícito
+     (`postgresql://...`), SQLAlchemy assume psycopg2 (não instalado, usamos psycopg3) — corrigido com
+     um `field_validator` em `Settings.database_url` (`app/core/config.py`) que força
+     `postgresql+psycopg://` sempre, não importa a origem da URL.
+  2. **Migration não idempotente**: `0001_init.py` chamava `enum.create(checkfirst=True)` E DEPOIS usava
+     o mesmo enum numa coluna (`create_table` também cria o tipo) — na prática funciona uma vez, mas se a
+     migration falhar no meio (aconteceu por causa do bug #1) e for reexecutada, quebra com "type already
+     exists". Removidas as chamadas `.create()` redundantes.
+  3. **Enums do SQLAlchemy mandando o nome errado**: por padrão SQLAlchemy manda o NOME do membro Python
+     do Enum (`"ADMIN"`) pro Postgres em vez do VALUE (`"admin"`) — mesmo em Enums com mixin de `str`.
+     A migration criou o tipo com valores minúsculos, então todo INSERT/UPDATE que usasse
+     `User.role`/`PipelineRun.status`/`PipelineRun.trigger` ia quebrar. Corrigido com
+     `values_callable=lambda cls: [e.value for e in cls]` nas três colunas enum.
+- **Se o banco ficar num estado quebrado de novo** (ex.: tipo enum criado mas tabela não): como não tem
+  dado real ainda, o caminho mais simples é apagar o banco (`operacionalc6-db`, NÃO o web service) no
+  Render e rodar "Manual Sync" no Blueprint pra recriar do zero — não precisa mexer em SQL manualmente.
 
 ## Como uma sessão nova deve retomar
 
