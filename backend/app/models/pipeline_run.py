@@ -28,11 +28,26 @@ class PipelineRun(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
     source: Mapped[str] = mapped_column(String(50), nullable=False)  # "api_corban" | "portal_rpa"
+    # values_callable: mesmo motivo do User.role (ver models/user.py) — sem isso o
+    # SQLAlchemy manda o NOME do membro Python em vez do VALOR, que não bate com
+    # os tipos enum que a migration criou no Postgres.
     status: Mapped[PipelineStatus] = mapped_column(
-        Enum(PipelineStatus, name="pipeline_status"), nullable=False, default=PipelineStatus.RUNNING
+        Enum(
+            PipelineStatus,
+            name="pipeline_status",
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
+        nullable=False,
+        default=PipelineStatus.RUNNING,
     )
     trigger: Mapped[PipelineTrigger] = mapped_column(
-        Enum(PipelineTrigger, name="pipeline_trigger"), nullable=False, default=PipelineTrigger.SCHEDULE
+        Enum(
+            PipelineTrigger,
+            name="pipeline_trigger",
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
+        nullable=False,
+        default=PipelineTrigger.SCHEDULE,
     )
 
     records_ingested: Mapped[int] = mapped_column(Integer, default=0)

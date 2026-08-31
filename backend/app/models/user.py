@@ -28,7 +28,15 @@ class User(Base):
     # a "lista de e-mails autorizados" é implementada: cadastro pelo admin, não senha.
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     full_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    role: Mapped[UserRole] = mapped_column(Enum(UserRole, name="user_role"), nullable=False, default=UserRole.MEMBRO)
+    role: Mapped[UserRole] = mapped_column(
+        # values_callable: sem isso, o SQLAlchemy manda o NOME do membro Python
+        # ("ADMIN") pro Postgres em vez do VALOR ("admin"), que é o que a migration
+        # criou no tipo `user_role` — dá erro "invalid input value" ao gravar
+        # (confirmado tentando rodar o seed contra o banco real).
+        Enum(UserRole, name="user_role", values_callable=lambda enum_cls: [e.value for e in enum_cls]),
+        nullable=False,
+        default=UserRole.MEMBRO,
+    )
 
     team_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("teams.id", ondelete="SET NULL"), nullable=True
