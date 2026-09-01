@@ -96,6 +96,15 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     rejeita e quebra o INSERT em lote inteiro por causa de uma linha só. Resolvido convertendo `NaN` pra
     `None` (vira `null` no JSON) ao montar o dict de `dimensions` em `_parse_report`, usando `pd.isna()`.
 
+14. **`Executable doesn't exist at /ms-playwright/.../chrome-headless-shell` só em produção (Render),
+    nunca local.**
+    `requirements.txt` tinha `playwright>=1.46` (sem travar versão) — a cada rebuild do Docker, o
+    `pip install` pega a versão mais nova do PyPI, mas a imagem base (`mcr.microsoft.com/playwright/python:v1.46.0-jammy`)
+    só tem os navegadores baixados pra 1.46.0 exatamente. Funcionou "por acaso" no primeiro deploy;
+    quebrou depois de vários redeploys pegarem uma versão mais nova. Corrigido travando
+    `playwright==1.46.0` (igual à tag da imagem). **Se atualizar a versão do Playwright, atualize os
+    dois juntos** (`requirements.txt` e a tag `FROM` do `Dockerfile`) — nunca só um dos dois.
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por
