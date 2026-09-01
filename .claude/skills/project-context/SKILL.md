@@ -50,13 +50,36 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
 - `column_mapping` das tiles "Detalhamento", "Detalhamento por Filial" e "Qtde por Alçadas" (arquivos já
   baixam certo, só não são parseados ainda — ver `portal_selectors.json`)
 
+**Feito (primeira ingestão real em produção, 2026-09-01):** 🎉
+- Rodado manualmente (da máquina do usuário, reaproveitando o perfil de navegador já aprovado, gravando
+  direto no Postgres de produção do Render via `run_pipeline()`) — **486 registros reais gravados em
+  `metrics`**, confirmados aparecendo no dashboard (`https://operacionalc6.vercel.app/dashboard`).
+- Três bugs reais encontrados e corrigidos nesse teste (só apareceram rodando contra produção de
+  verdade — documentados em detalhe na skill `rpa-conventions`, itens 11-13):
+  1. Filtro de período do Looker (`filter_value`) mudado de `"this month"` pra `"2 months"` — o mês
+     corrente ainda não tinha apuração fechada.
+  2. `download_wait_ms` aumentado de 20s pra 60s — tile mais pesada ainda estava renderizando quando o
+     robô tentava baixar (suspeita, não 100% confirmada — ver item 12 da skill).
+  3. Célula vazia numa coluna de dimensão virava `NaN` do pandas, gerando JSON inválido pro Postgres —
+     corrigido convertendo pra `None`/`null`.
+- **`app/core/config.py`**: corrigido pra aceitar `postgres://` (esquema curto, usado na "External
+  Database URL" do Render) além de `postgresql://` — antes só o formato longo era tratado.
+
 **Ainda não iniciado:**
 - Mapear os outros relatórios do hub "One Page - Auto" (ex.: Apuração Comissão Carteira, Apuração Parceiro
   - Histórica, Resumo Apuração Parceiro 2.0, Painel Visita - Mercado, e outros cards fora da aba "Auto")
-- Rodar o RPA contra o banco de produção pela primeira vez — hoje `/metrics` no ambiente real retorna
-  vazio, o dashboard funciona mas não tem dado nenhum ainda.
-- Limpar env vars do backend que a Vercel importou sem necessidade no projeto do frontend (ver
-  detalhes na seção "Frontend mínimo" abaixo).
+- `column_mapping` das 3 tiles restantes do relatório já mapeado ("Detalhamento", "Detalhamento por
+  Filial", "Qtde por Alçadas") — arquivos já baixam certo, só não são parseados ainda.
+- Configurar o robô pra rodar sozinho DENTRO do Render (não só manual da máquina do usuário) — precisa
+  copiar o perfil de navegador já aprovado pro disco persistente do Render via "Shell", e confirmar que
+  `C6_PORTAL_USERNAME`/`C6_PORTAL_PASSWORD` estão cadastrados lá. Combinado com o usuário fazer isso como
+  próximo passo separado.
+- **Pendência de correção conhecida, importante antes de ligar o agendamento automático**: o padrão
+  "sem datas explícitas = hoje até hoje" (usado tanto no agendador quanto no endpoint manual
+  `POST /pipeline/run`) não funciona bem com dados de granularidade mensal — só captura registros se
+  rodar exatamente no dia em que `Anomes Apuracao` cair dentro da janela de 1 dia. Descoberto rodando
+  manualmente (teve que passar `date_from`/`date_to` explícitos cobrindo 60 dias pra funcionar). Precisa
+  de um default mais adequado (ex.: sempre olhar os últimos ~2 meses) antes do robô rodar sozinho.
 - Confirmação formal com o C6 de que a automação é sancionada (ver `rpa-conventions` — o portal reage
   diferente a navegador automatizado; ainda não temos essa confirmação do banco)
 
