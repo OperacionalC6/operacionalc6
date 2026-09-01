@@ -78,6 +78,16 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     `failure_<timestamp>.png` salvo em `RPA_ARTIFACTS_DIR` se a tile estava vazia ("No Results") — se
     sim, é filtro de período curto demais, não bug de seletor.
 
+12. **Mesmo `TimeoutError` em "waiting for event download", mas agora com a tile CHEIA de dados no print**
+    (não mais "No Results") — outra causa possível, ainda sob suspeita (2026-09-01): o botão "Tile
+    actions" no header de uma tile fica visível antes da tile terminar de rodar sua própria query —
+    então só esperar esse botão (padrão já usado pra tile[0] antes do loop) não garante que uma tile
+    mais abaixo/mais pesada já renderizou quando o loop chega nela. Paliativo aplicado: `download_wait_ms`
+    de 20000 para 60000 em `portal_selectors.json`. Se voltar a falhar mesmo com 60s, o próximo passo é
+    rodar `HEADLESS=false` e achar um seletor confiável de "tile terminou de carregar" (provável
+    spinner do Looker) pra esperar por tile, individualmente, antes de cada `expect_download` — não
+    escrever esse seletor às cegas, confirmar visualmente primeiro.
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por

@@ -45,7 +45,16 @@
       "por tile.",
       "CONFIRMADO em teste real (2026-08-18): 'Download data' abre um modal com dropdown de formato (CSV vem",
       "selecionado por padrão) e um botão 'Download' que precisa ser clicado pra confirmar — o conector já",
-      "trata isso."
+      "trata isso.",
+      "SUSPEITA (2026-09-01, ainda não 100% confirmada com HEADLESS=false): o botão 'Tile actions' de uma",
+      "tile aparece no header antes da tile terminar de rodar sua própria query — então esperar só esse",
+      "botão ficar visível (como já é feito pra tile[0], antes do loop) não garante que a tile já tenha",
+      "dado renderizado quando o loop chega numa tile mais pesada/mais abaixo. Sintoma: TimeoutError em",
+      "'waiting for event download' com o print de falha mostrando a seção da tile ainda sem tabela",
+      "preenchida. Aumentado download_wait_ms de 20000 para 60000 como paliativo (dá mais tempo pro clique",
+      "'funcionar' mesmo que a tile ainda esteja carregando). Se persistir, rodar HEADLESS=false e procurar",
+      "um seletor confiável de 'tile terminou de carregar' (provável spinner/loading state do Looker) pra",
+      "esperar por tile antes do expect_download, em vez de só aumentar timeout."
     ],
     "bootstrap_path": "/WebAutorizador/MenuWeb/Relatorios/Documentacao/UI.RelatorioGerencialExterno.aspx",
     "base_url": "https://c6bank.cloud.looker.com",
@@ -57,7 +66,7 @@
         "dashboard_slug": "corp_consignado_embed::01526_auto",
         "filter_param": "Safra Mês",
         "filter_value": "2 months",
-        "download_wait_ms": 20000,
+        "download_wait_ms": 60000,
         "tiles": [
           {
             "key": "detalhamento",
