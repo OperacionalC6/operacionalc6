@@ -23,7 +23,15 @@ export default function DashboardPage() {
       return;
     }
 
-    Promise.all([fetchMe(), fetchMetrics()])
+    const dateTo = new Date();
+    const dateFrom = new Date();
+    dateFrom.setDate(dateFrom.getDate() - 90);
+    const toIsoDate = (d: Date) => d.toISOString().slice(0, 10);
+
+    Promise.all([
+      fetchMe(),
+      fetchMetrics({ date_from: toIsoDate(dateFrom), date_to: toIsoDate(dateTo) }),
+    ])
       .then(([meData, metricsData]) => {
         setUser(meData);
         setMetrics(metricsData);
@@ -71,7 +79,7 @@ export default function DashboardPage() {
         {!loading && !error && (
           <>
             <div className="mb-6 rounded-lg border border-zinc-200 bg-white p-6">
-              <p className="text-sm text-zinc-500">Total (últimos 30 dias)</p>
+              <p className="text-sm text-zinc-500">Total (últimos 90 dias)</p>
               <p className="text-2xl font-semibold text-zinc-900">{formatCurrency(total)}</p>
             </div>
 

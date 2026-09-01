@@ -16,7 +16,10 @@ router = APIRouter(prefix="/metrics", tags=["metrics"])
 @router.get("", response_model=list[MetricOut])
 def list_metrics(
     request: Request,
-    date_from: date = Query(default_factory=lambda: date.today() - timedelta(days=30)),
+    # 90 dias (não 30): métricas de apuração mensal (ex.: comissao_avista) chegam com
+    # metric_date = dia 1 do mês da apuração — uma janela de 30 dias corta o mês
+    # corrente inteiro sempre que "hoje" cai nos primeiros dias do mês seguinte.
+    date_from: date = Query(default_factory=lambda: date.today() - timedelta(days=90)),
     date_to: date = Query(default_factory=date.today),
     metric_name: str | None = None,
     team_id: str | None = Query(default=None, description="Somente respeitado para admin/gestor."),
