@@ -38,7 +38,7 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
   nem rodando na máquina dele. Código já está na organização GitHub `OperacionalC6` (transferido de
   `sguedesfelipe/operacionalc6` em 2026-08-18). Contas de Render/Vercel: ver "Status atual".
 
-## Status atual (2026-08-18)
+## Status atual (2026-09-01)
 
 **Funcionando e validado contra o portal real:**
 - Login no WebAutorizador (`backend/app/services/connectors/portal_rpa.py`)
@@ -53,16 +53,17 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
 **Ainda não iniciado:**
 - Mapear os outros relatórios do hub "One Page - Auto" (ex.: Apuração Comissão Carteira, Apuração Parceiro
   - Histórica, Resumo Apuração Parceiro 2.0, Painel Visita - Mercado, e outros cards fora da aba "Auto")
-- Frontend (não existe nenhuma linha ainda)
-- ~~Criar o OAuth Client do Google~~ — feito em 2026-08-27. `GOOGLE_OAUTH_CLIENT_ID` =
-  `1038135927680-3tvpk42jdnk1v3ab84rsfciqlbnelsdo.apps.googleusercontent.com` (não é segredo, pode
-  usar direto no backend e no frontend). "Authorized JavaScript origins" hoje só tem
-  `http://localhost:3000` — precisa voltar lá e adicionar a URL de verdade da Vercel assim que o
-  frontend for publicado.
-- Importar/publicar o projeto na Vercel — conta e conexão com o GitHub prontas, mas sem frontend pra
-  publicar ainda
+- Rodar o RPA contra o banco de produção pela primeira vez — hoje `/metrics` no ambiente real retorna
+  vazio, o dashboard funciona mas não tem dado nenhum ainda.
+- Limpar env vars do backend que a Vercel importou sem necessidade no projeto do frontend (ver
+  detalhes na seção "Frontend mínimo" abaixo).
 - Confirmação formal com o C6 de que a automação é sancionada (ver `rpa-conventions` — o portal reage
   diferente a navegador automatizado; ainda não temos essa confirmação do banco)
+
+~~Criar o OAuth Client do Google~~ — feito em 2026-08-27. `GOOGLE_OAUTH_CLIENT_ID` =
+`1038135927680-3tvpk42jdnk1v3ab84rsfciqlbnelsdo.apps.googleusercontent.com` (não é segredo). Authorized
+JavaScript origins já inclui `https://operacionalc6.vercel.app` (feito em 2026-09-01, ver detalhes
+abaixo).
 
 **Feito (infra/organização, 2026-08-18):**
 - Organização `OperacionalC6` criada no GitHub e repositório transferido pra lá (app do Claude reinstalado
@@ -126,15 +127,43 @@ Tailwind). Build e lint passam. Duas páginas:
 - Variáveis de ambiente do frontend (ver `frontend/.env.local.example`): `NEXT_PUBLIC_API_URL` e
   `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (mesmo Client ID do backend, não é segredo).
 
-**Pendente (passos manuais na Vercel/Google Cloud, ainda não feitos):**
-1. Importar o projeto na Vercel apontando pro diretório `frontend/` (Root Directory), com as duas
-   env vars acima.
-2. Depois que a Vercel gerar a URL real (tipo `operacionalc6.vercel.app`): adicionar essa URL em
-   "Authorized JavaScript origins" do OAuth Client no Google Cloud Console (hoje só tem
-   `http://localhost:3000`).
-3. Atualizar `BACKEND_CORS_ORIGINS` no Render pra incluir essa mesma URL da Vercel (hoje só tem o
-   placeholder localhost) — sem isso o navegador bloqueia as chamadas do frontend pro backend
-   (CORS).
+**Feito (frontend NO AR em produção, 2026-09-01):** 🎉
+- Publicado na Vercel: `https://operacionalc6.vercel.app` (branch de produção configurada como
+  `claude/previous-session-recovery-fv67s4`, Root Directory `frontend`, Framework Preset `Next.js`).
+- `https://operacionalc6.vercel.app` liberado em "Authorized JavaScript origins" do OAuth Client no
+  Google Cloud Console.
+- `BACKEND_CORS_ORIGINS` no Render atualizado pra incluir essa URL.
+- **Login com Google + dashboard validados de ponta a ponta pelo próprio usuário**, contra o backend
+  e banco de produção reais. Walking skeleton completo (backend + frontend + auth) confirmado
+  funcionando.
+- Armadilhas do primeiro deploy na Vercel, documentadas pra não perder tempo de novo:
+  1. **Repositório tinha uma branch "default" diferente de `main`** (`claude/c6bank-reports-automation-5391mz`,
+     de uma sessão antiga) — a Vercel usa a branch default do GitHub pra popular a lista de pastas no
+     import, então `frontend/` não aparecia. Corrigido em Settings → Environments → Production →
+     Branch Tracking, apontando pra `claude/previous-session-recovery-fv67s4`.
+  2. **"Redeploy" de um deployment antigo reusa o commit/branch ORIGINAL daquele deployment**, não a
+     configuração atual do projeto — não adianta mudar Branch Tracking e clicar "Redeploy" num
+     deployment criado antes da mudança. É preciso um push novo (ou "Create Deployment" apontando a
+     branch certa) pra gerar um deployment que já nasce com a config nova.
+  3. **Root Directory** nessa versão da Vercel fica em Settings → **Build and Deployment** (não em
+     "General" nem em "Git").
+  4. **Framework Preset ficou preso em "Other"**: foi detectado errado durante o import inicial
+     (quando a Root Directory ainda apontava pra raiz do repo, sem `package.json`). Trocar a Root
+     Directory depois não corrige o preset sozinho — precisa ir em Build and Deployment e trocar
+     manualmente pra "Next.js", senão o build "passa" mas todas as rotas retornam 404.
+  5. **As env vars `NEXT_PUBLIC_*` não foram salvas no primeiro import** (pulamos aquela tela ao
+     corrigir a Root Directory) — sem elas o Google Identity Services dá erro
+     `Missing required parameter: client_id`. `NEXT_PUBLIC_*` é "assado" no build, então precisa de
+     um redeploy novo depois de cadastrar.
+  6. **Erro "origin_mismatch" do Google**: cada deployment da Vercel gera uma URL única
+     (`operacionalc6-xxxxx-operacional-c6.vercel.app`) — o Google só aceita login na origem
+     cadastrada (`https://operacionalc6.vercel.app`, o domínio de produção estável). Testar sempre
+     nesse domínio, não na URL de um deployment específico.
+- **Pendente de limpeza (não bloqueia nada)**: o projeto da Vercel importou automaticamente ~26
+  variáveis de ambiente do `.env.example` da raiz do repo (`POSTGRES_*`, `DATABASE_URL`,
+  `JWT_SECRET_KEY` etc.) — são do backend, o frontend não usa nenhuma. Vale remover em Settings →
+  Environment Variables pra não expor detalhes de infra do backend num projeto que não precisa
+  deles.
 
 ## Como uma sessão nova deve retomar
 
