@@ -105,6 +105,18 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     `playwright==1.46.0` (igual à tag da imagem). **Se atualizar a versão do Playwright, atualize os
     dois juntos** (`requirements.txt` e a tag `FROM` do `Dockerfile`) — nunca só um dos dois.
 
+15. **Cloudflare do C6 bloqueia a conexão vinda do Render (`"Sorry, you have been blocked"`,
+    `c6consig.com.br`), mesmo com login/senha/perfil aprovado corretos — confirmado em teste real
+    (2026-09-01).**
+    Não é bug de código — é o Cloudflare do próprio portal recusando a origem (datacenter Render,
+    região Oregon/EUA). Confirmado pelo print de falha (`failure_*.png`): tela de bloqueio do
+    Cloudflare, não a tela de login. **Isso está DENTRO da "Linha que não se cruza" abaixo — não
+    existe fix de código pra isso, e não vamos tentar (trocar IP escondido, VPN, falsificar
+    cabeçalhos, etc.).** Conclusão prática: rodar o robô de dentro do Render não é viável como está.
+    Duas saídas legítimas: (a) pedir ao C6 pra confiar/liberar essa origem formalmente, junto com a
+    confirmação de que a automação é sancionada; (b) rodar o agendamento a partir da rede/máquina do
+    usuário (já aceita pelo portal), via Agendador de Tarefas do Windows — não dentro do Render.
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por

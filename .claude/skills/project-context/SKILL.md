@@ -75,10 +75,15 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
   - Histórica, Resumo Apuração Parceiro 2.0, Painel Visita - Mercado, e outros cards fora da aba "Auto")
 - `column_mapping` das 3 tiles restantes do relatório já mapeado ("Detalhamento", "Detalhamento por
   Filial", "Qtde por Alçadas") — arquivos já baixam certo, só não são parseados ainda.
-- Configurar o robô pra rodar sozinho DENTRO do Render (não só manual da máquina do usuário) — precisa
-  copiar o perfil de navegador já aprovado pro disco persistente do Render via "Shell", e confirmar que
-  `C6_PORTAL_USERNAME`/`C6_PORTAL_PASSWORD` estão cadastrados lá. Combinado com o usuário fazer isso como
-  próximo passo separado.
+- ~~Configurar o robô pra rodar sozinho DENTRO do Render~~ — **tentado e descartado em 2026-09-01**:
+  o Cloudflare do C6 bloqueia ativamente a conexão vinda do datacenter do Render (Oregon/EUA) —
+  `"Sorry, you have been blocked"`, confirmado por print de falha real. Não é bug de código, é defesa
+  de segurança do portal funcionando como esperado — está dentro da "Linha que não se cruza" (ver
+  `rpa-conventions`, item 15), não vamos contornar. SSH + disco persistente + perfil de navegador
+  copiado (tudo isso já foi feito e funciona tecnicamente) ficam documentados como referência, mas a
+  execução dentro do Render em si não é viável enquanto o C6 não confiar nessa origem. Próximo passo
+  real: rodar o agendamento a partir da rede do usuário (Agendador de Tarefas do Windows), ou pedir ao
+  C6 pra liberar a origem formalmente.
 ~~Pendência de correção "hoje até hoje" no pipeline~~ — corrigida em 2026-09-01, junto com um segundo
 bug mais sério achado na hora de preparar o agendamento automático: **nenhuma proteção contra
 duplicata**. `run_pipeline()` só fazia `INSERT`, nunca substituía nada — como o agendador roda 3x/dia,
