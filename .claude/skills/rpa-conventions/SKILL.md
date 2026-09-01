@@ -88,6 +88,14 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     spinner do Looker) pra esperar por tile, individualmente, antes de cada `expect_download` — não
     escrever esse seletor às cegas, confirmar visualmente primeiro.
 
+13. **`psycopg.errors.InvalidTextRepresentation: invalid input syntax for type json` / `Token "NaN" is invalid`
+    ao gravar em `metrics`.**
+    Célula vazia numa coluna de dimensão do CSV do Looker (ex.: "Status Contrato" em branco) vira `NaN`
+    (float) do pandas, não string vazia. O `json` do Python serializa `NaN` como o token literal `NaN`
+    (aceita por padrão, mesmo não sendo JSON válido pela especificação) — mas o parser JSONB do Postgres
+    rejeita e quebra o INSERT em lote inteiro por causa de uma linha só. Resolvido convertendo `NaN` pra
+    `None` (vira `null` no JSON) ao montar o dict de `dimensions` em `_parse_report`, usando `pd.isna()`.
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por
