@@ -16,9 +16,12 @@ class Settings(BaseSettings):
     @classmethod
     def _use_psycopg3_driver(cls, v: str) -> str:
         # Provedores gerenciados (Render, etc.) entregam a connection string sem
-        # driver explícito ("postgresql://..."), que o SQLAlchemy interpreta como
-        # psycopg2 por padrão — mas usamos psycopg3 (ver requirements.txt). Sem
+        # driver explícito, e às vezes no esquema curto "postgres://" (não só
+        # "postgresql://") — em ambos os casos o SQLAlchemy interpreta como
+        # psycopg2 por padrão, mas usamos psycopg3 (ver requirements.txt). Sem
         # isso, tanto a API quanto as migrations do Alembic falham ao conectar.
+        if v.startswith("postgres://"):
+            return v.replace("postgres://", "postgresql+psycopg://", 1)
         if v.startswith("postgresql://"):
             return v.replace("postgresql://", "postgresql+psycopg://", 1)
         return v
