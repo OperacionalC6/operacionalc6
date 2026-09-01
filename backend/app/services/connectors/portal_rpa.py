@@ -341,8 +341,15 @@ class PortalRpaConnector(DataConnector):
 
         records: list[ConnectorRecord] = []
         for _, row in df.iterrows():
+            # pd.isna() em vez de checar direto: células vazias no CSV do Looker viram
+            # NaN (float) do pandas, e o serializador de JSON do Postgres rejeita o
+            # token "NaN" (não é JSON válido, mesmo o json do Python aceitando por
+            # padrão) — quebra o INSERT inteiro do lote por causa de uma linha só.
+            # Convertemos pra None (vira null no JSON) em vez de perder a linha.
             dimensions = {
-                col: row[col] for col in mapping.get("dimension_columns", []) if col in df.columns
+                col: (None if pd.isna(row[col]) else row[col])
+                for col in mapping.get("dimension_columns", [])
+                if col in df.columns
             }
             records.append(
                 ConnectorRecord(
