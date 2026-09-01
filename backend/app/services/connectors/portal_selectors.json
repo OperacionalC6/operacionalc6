@@ -37,10 +37,12 @@
       "conector visita esse path uma vez por execução antes de qualquer dashboard_slug.",
       "O filtro de período é aplicado via query string na própria URL do dashboard (Looker suporta isso",
       "nativamente — visto em outro card do hub com '?Tipo+Exibicao=...&Tp+Atendimento=...'), em vez de clicar",
-      "no seletor de datas da UI (mais frágil). PENDENTE VALIDAR: o valor exato de filter_value abaixo",
-      "('this month') precisa ser conferido rodando com HEADLESS=false — o padrão observado na tela era",
-      "'is in the last 6 months' (sintaxe Looker 'N months'); não confirmamos ainda se 'this month' produz o",
-      "mesmo resultado que selecionar manualmente o mês corrente, ou se o valor correto é '1 months'.",
+      "no seletor de datas da UI (mais frágil). CONFIRMADO em teste real contra produção (2026-09-01):",
+      "'this month' deixa a tile 'Detalhamento por Filial' sem nenhum resultado ('No Results') — a apuração do",
+      "mês corrente ainda não estava fechada/disponível no momento do teste. Trocado para '2 months' (sintaxe",
+      "Looker 'N months', equivalente a 'is in the last 2 months' na UI) para sempre pegar pelo menos um mês",
+      "fechado além do corrente. Esse filtro vale pro dashboard inteiro (todas as tiles do report), não é",
+      "por tile.",
       "CONFIRMADO em teste real (2026-08-18): 'Download data' abre um modal com dropdown de formato (CSV vem",
       "selecionado por padrão) e um botão 'Download' que precisa ser clicado pra confirmar — o conector já",
       "trata isso."
@@ -54,7 +56,7 @@
         "description": "Apuração Parceiro 2.0 > Apuração Comissão À Vista. 4 tiles nesta aba, todas precisam ser exportadas.",
         "dashboard_slug": "corp_consignado_embed::01526_auto",
         "filter_param": "Safra Mês",
-        "filter_value": "this month",
+        "filter_value": "2 months",
         "download_wait_ms": 20000,
         "tiles": [
           {

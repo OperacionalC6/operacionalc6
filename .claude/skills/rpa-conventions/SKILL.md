@@ -69,6 +69,15 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
 10. **Popup nativo "Salvar senha?" do Chrome interrompe execução sem supervisão.**
     Desativado via `args=["--disable-save-password-bubble"]` no `launch_persistent_context`.
 
+11. **`TimeoutError: Timeout ... exceeded while waiting for event "download"` numa tile específica.**
+    Confirmado em teste real contra produção (2026-09-01): a tile "Comissão À Vista - Detalhamento por
+    Filial" veio com "No Results" na tela (print de falha salvo automaticamente) — o filtro de período
+    configurado (`filter_value: "this month"`) não tinha dado ainda fechado/disponível no momento do
+    teste. Trocado pra `"2 months"` (equivalente a "is in the last 2 months" na UI do Looker) pra sempre
+    cobrir pelo menos um mês fechado além do corrente. Se aparecer de novo: confirme pelo
+    `failure_<timestamp>.png` salvo em `RPA_ARTIFACTS_DIR` se a tile estava vazia ("No Results") — se
+    sim, é filtro de período curto demais, não bug de seletor.
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por
