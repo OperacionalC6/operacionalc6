@@ -64,6 +64,11 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
      corrigido convertendo pra `None`/`null`.
 - **`app/core/config.py`**: corrigido pra aceitar `postgres://` (esquema curto, usado na "External
   Database URL" do Render) além de `postgresql://` — antes só o formato longo era tratado.
+- **Confirmado visualmente pelo usuário no dashboard** (`https://operacionalc6.vercel.app/dashboard`):
+  R$ 118.429,37 em comissão à vista, 486 linhas de agosto/2026. Também corrigido nesse processo: janela
+  padrão de `GET /metrics` (e do dashboard) ampliada de 30 pra 90 dias — 30 dias cortava dado do dia 1
+  do mês quando "hoje" já tinha passado pro mês seguinte (mesma causa raiz do problema de datas do
+  pipeline, agora também no lado de leitura).
 
 **Ainda não iniciado:**
 - Mapear os outros relatórios do hub "One Page - Auto" (ex.: Apuração Comissão Carteira, Apuração Parceiro
