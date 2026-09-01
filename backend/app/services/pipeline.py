@@ -30,7 +30,10 @@ def run_pipeline(
     """
     db: Session = SessionLocal()
     date_to = date_to or date.today()
-    date_from = date_from or date_to
+    # 90 dias, não "date_to" (mesmo dia): métricas de apuração mensal (ex.: comissao_avista)
+    # chegam com metric_date = dia 1 do mês da apuração — uma janela de 1 dia só pega dado
+    # se "hoje" coincidir exatamente com o dia 1, o que quase nunca acontece.
+    date_from = date_from or (date_to - timedelta(days=90))
 
     run = PipelineRun(
         source=settings.data_source_mode,
@@ -44,6 +47,29 @@ def run_pipeline(
     try:
         connector = get_connector()
         raw_records = connector.fetch(date_from=date_from, date_to=date_to)
+
+        # Sem isso, cada execução do agendador (3x/dia) empilharia os mesmos registros de
+        # novo — não existe upsert por linha (dimensions é JSON livre, não dá pra comparar
+        # com segurança). Em vez disso, cada rodada SUBSTITUI a janela inteira: apaga o que
+        # já existia dessa fonte no período antes de inserir o que acabou de buscar. Preserva
+        # dado de fora da janela e de outras fontes; idempotente rodar quantas vezes quiser.
+        deleted = (
+            db.query(Metric)
+            .filter(
+                Metric.source == connector.source_name,
+                Metric.metric_date >= date_from,
+                Metric.metric_date <= date_to,
+            )
+            .delete(synchronize_session=False)
+        )
+        if deleted:
+            logger.info(
+                "Removidos %d registros antigos de '%s' no período %s–%s antes de reinserir.",
+                deleted,
+                connector.source_name,
+                date_from,
+                date_to,
+            )
 
         team_cache: dict[str, Team | None] = {}
         inserted = 0

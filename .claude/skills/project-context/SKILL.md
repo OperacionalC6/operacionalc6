@@ -79,12 +79,16 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
   copiar o perfil de navegador já aprovado pro disco persistente do Render via "Shell", e confirmar que
   `C6_PORTAL_USERNAME`/`C6_PORTAL_PASSWORD` estão cadastrados lá. Combinado com o usuário fazer isso como
   próximo passo separado.
-- **Pendência de correção conhecida, importante antes de ligar o agendamento automático**: o padrão
-  "sem datas explícitas = hoje até hoje" (usado tanto no agendador quanto no endpoint manual
-  `POST /pipeline/run`) não funciona bem com dados de granularidade mensal — só captura registros se
-  rodar exatamente no dia em que `Anomes Apuracao` cair dentro da janela de 1 dia. Descoberto rodando
-  manualmente (teve que passar `date_from`/`date_to` explícitos cobrindo 60 dias pra funcionar). Precisa
-  de um default mais adequado (ex.: sempre olhar os últimos ~2 meses) antes do robô rodar sozinho.
+~~Pendência de correção "hoje até hoje" no pipeline~~ — corrigida em 2026-09-01, junto com um segundo
+bug mais sério achado na hora de preparar o agendamento automático: **nenhuma proteção contra
+duplicata**. `run_pipeline()` só fazia `INSERT`, nunca substituía nada — como o agendador roda 3x/dia,
+ia empilhar os mesmos registros pra sempre. Corrigido em `app/services/pipeline.py`:
+1. Default de `date_from` mudou de "mesmo dia que `date_to`" pra "90 dias antes" (mesmo raciocínio do
+   fix do `/metrics`).
+2. Antes de inserir os registros buscados, a rodada agora **apaga** as métricas já existentes daquela
+   `source` dentro da janela `[date_from, date_to]` e insere as novas por cima — cada execução
+   substitui a janela inteira em vez de empilhar. Preserva dado de fora da janela e de outras fontes;
+   idempotente rodar quantas vezes quiser.
 - Confirmação formal com o C6 de que a automação é sancionada (ver `rpa-conventions` — o portal reage
   diferente a navegador automatizado; ainda não temos essa confirmação do banco)
 
