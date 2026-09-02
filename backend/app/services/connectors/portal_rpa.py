@@ -272,7 +272,13 @@ class PortalRpaConnector(DataConnector):
             # Query string completa, já codificada, copiada direto da URL real do
             # dashboard (usada quando o relatório tem muitos filtros — mais simples
             # e mais fiel colar a URL toda do que tentar reconstruir cada parâmetro).
-            url += f"?{report_cfg['filter_query']}"
+            # {current_month} é substituído pelo mês corrente (AAAA-MM) — necessário
+            # pra filtros de "mês de referência" fixo (não são uma janela relativa
+            # tipo "6 month"/"30 day" que o próprio Looker já rola sozinho).
+            filter_query = report_cfg["filter_query"].replace(
+                "{current_month}", datetime.now().strftime("%Y-%m")
+            )
+            url += f"?{filter_query}"
         elif report_cfg.get("filter_param") and report_cfg.get("filter_value"):
             url += (
                 f"?{quote(report_cfg['filter_param'])}="

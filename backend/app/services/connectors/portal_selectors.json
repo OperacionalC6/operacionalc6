@@ -295,6 +295,41 @@
             }
           }
         ]
+      },
+      {
+        "name": "painel_visita_mercado",
+        "description": "Card 'Painel Visita - Mercado' no hub One Page - market share por loja (produção C6 vs. mercado total/segmentos), 1 tile.",
+        "dashboard_slug": "corp_consignado_embed::00305_visitas",
+        "filter_query": "R%24%2F%23=1&Dt+Refer%C3%AAncia+Month={current_month}&Lojista=&Nome+GP=&SUPERVISOR=&Nome+GN=&Nome+Filial=&Concession%C3%A1ria=&Auto+Shopping=&Plataforma=&Uf+Loja=&Cidade+Loja=&Bairro+Loja=",
+        "_filter_nota": "IMPORTANTE, diferente dos outros filtros: 'Dt Referência Month' aqui é um MÊS FIXO (ex.: '2026-03'), não uma janela relativa tipo 'N month'/'N day' que o Looker rola sozinho. Usamos o placeholder {current_month}, substituído em runtime pelo mês corrente (AAAA-MM) em _download_looker_tiles — sem isso o robô ficaria preso pra sempre buscando o mês que foi hardcoded aqui. Descoberto porque a URL real compartilhada em 2026-09-02 tinha '2026-03', mas o arquivo de exemplo baixado era de agosto/2026 (usuário trocou o filtro na UI antes de exportar sem atualizar a URL copiada).",
+        "download_wait_ms": 60000,
+        "tiles": [
+          {
+            "key": "analitico_mercado_por_loja",
+            "name": "Analítico Mercado por Loja",
+            "column_mapping": [
+              {
+                "_origem": "Extraído do XLSX real baixado em 2026-09-02 (395 linhas, uma por loja/mês).",
+                "date_column": "Mês",
+                "date_format": null,
+                "value_column": "Produção C6",
+                "metric_name": "mercado_producao_c6",
+                "team_column": null,
+                "dimension_columns": ["Nome Gp", "Nome Gn", "Nome Loja", "CNPJ Loja", "Uf Loja", "Cidade Loja", "Bairro Loja", "Parceiro Atendimento", "Nome Grupo", "Market Share Total", "Market Share Público Alvo", "Mercado - Share Novos"]
+              },
+              {
+                "_origem": "Extraído do XLSX real baixado em 2026-09-02.",
+                "_metric_name_nota": "Mercado TOTAL na loja (todos os credores, não só o C6) — junto com 'mercado_producao_c6' dá pra calcular market share sem depender das colunas de % (que não gravamos como métrica separada por não fazer sentido somar percentual entre lojas). Colunas 'Financiamento Público Alvo' e 'Financiamento Novos' (segmentos mais específicos) ficaram só como dimensão por enquanto, não viraram métrica própria — dá pra promover depois se precisar.",
+                "date_column": "Mês",
+                "date_format": null,
+                "value_column": "Financiamento Total",
+                "metric_name": "mercado_financiamento_total",
+                "team_column": null,
+                "dimension_columns": ["Nome Gp", "Nome Gn", "Nome Loja", "CNPJ Loja", "Uf Loja", "Cidade Loja", "Bairro Loja", "Parceiro Atendimento", "Nome Grupo", "Financiamento Público Alvo", "Financiamento Novos"]
+              }
+            ]
+          }
+        ]
       }
     ]
   }
