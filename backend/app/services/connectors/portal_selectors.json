@@ -257,6 +257,44 @@
             }
           }
         ]
+      },
+      {
+        "name": "apuracao_comissao_carteira",
+        "description": "Apuração Parceiro 2.0 > Apuração Comissão Carteira. 2 tiles.",
+        "dashboard_slug": "corp_consignado_embed::01512_auto",
+        "filter_query": "Safra+M%C3%AAs=6+month&Contrato=&Master=&Parceiro=&Elegibilidade+Carteira=&Ano+M%C3%AAs=",
+        "_filter_nota": "Copiado verbatim da URL real compartilhada pelo usuário em 2026-09-02. Mesmo padrão 'Safra Mês=6 month' do relatório apuracao_parceiro_resumo.",
+        "download_wait_ms": 60000,
+        "tiles": [
+          {
+            "key": "detalhamento",
+            "name": "Comissão Carteira - Detalhamento",
+            "column_mapping": {
+              "_origem": "Extraído do XLSX real baixado em 2026-09-02.",
+              "_metric_name_nota": "'Comissão Carteira' aqui é IDÊNTICA (mesmo valor, linha a linha, conferido) ao rollup já capturado em metric_name 'comissao_carteira' (relatório apuracao_parceiro_resumo, tile 'Comissão Total'). Nome diferente aqui só pra carregar as dimensões de faixa de atingimento/limites por teto que não existem em nenhum outro lugar — NÃO somar junto com 'comissao_carteira' (duplicaria o mesmo valor).",
+              "date_column": "Mês Apuração",
+              "date_format": "%Y%m",
+              "value_column": "Comissão Carteira",
+              "metric_name": "comissao_carteira_detalhamento",
+              "team_column": null,
+              "dimension_columns": ["Cnpj Master", "Master", "Cnpj Parceiro", "Parceiro", "Faixa Atingimento", "% Atingimento", "Carteira Total", "Prazo Remanescente"]
+            }
+          },
+          {
+            "key": "analitico",
+            "name": "Analítico",
+            "column_mapping": {
+              "_origem": "Extraído do XLSX real baixado em 2026-09-02 (501 linhas, uma por contrato).",
+              "_natureza_nota": "Diferente do 'Analítico' de comissao_avista: aqui NÃO tem coluna de comissão — é o detalhe da CARTEIRA em si (saldo devedor por contrato), a base sobre a qual a comissão de carteira é calculada, não dinheiro recebido. value_column = 'Saldo' (saldo devedor atual do contrato).",
+              "date_column": "Mês Apuração",
+              "date_format": "%Y%m",
+              "value_column": "Saldo",
+              "metric_name": "carteira_saldo",
+              "team_column": null,
+              "dimension_columns": ["Cnpj Master", "Master", "Cnpj Parceiro", "Parceiro", "Nome Loja", "Cod + Filial", "Cod. Contrato", "Vl Principal", "Faixa de Atraso", "Saldo Contabilizado (<90 dias de atraso)", "Elegibilidade Carteira", "Prazo Remanescente"]
+            }
+          }
+        ]
       }
     ]
   }
