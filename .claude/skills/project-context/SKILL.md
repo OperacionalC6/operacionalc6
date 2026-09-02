@@ -38,17 +38,43 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
   nem rodando na máquina dele. Código já está na organização GitHub `OperacionalC6` (transferido de
   `sguedesfelipe/operacionalc6` em 2026-08-18). Contas de Render/Vercel: ver "Status atual".
 
-## Status atual (2026-09-01)
+## Status atual (2026-09-02)
 
 **Funcionando e validado contra o portal real:**
 - Login no WebAutorizador (`backend/app/services/connectors/portal_rpa.py`)
 - Acesso aos dashboards Looker (via bootstrap — ver skill `rpa-conventions`)
-- Download das 4 tiles do relatório "Apuração Comissão À Vista" (dashboard Looker `corp_consignado_embed::01526_auto`)
-- Parsing completo de 1 das 4 tiles ("Analítico") → 214 registros normalizados por execução
+- **3 relatórios Looker mapeados e validados** (todos com dados reais fornecidos pelo usuário, não
+  seletores adivinhados — ver `portal_selectors.json`):
+  1. `comissao_avista` (dashboard `corp_consignado_embed::01526_auto`) — 4 tiles, 3 mapeadas
+     (`comissao_avista`, `comissao_avista_detalhamento`, `comissao_avista_por_filial`); "Qtde por
+     Alçadas" deixada pra depois (cabeçalho pivotado, precisa parsing especial).
+  2. `apuracao_parceiro_resumo` (dashboard `corp_consignado_embed::01532_auto`) — 4 tiles, todas
+     mapeadas: `comissao_liquida`, `comissao_carteira`, `producao`/`producao_por_filial`,
+     `seguros`/`seguros_por_filial`.
+  3. `acompanhamento_veiculos` (dashboard `corp_consignado_embed::00087`) — 1 tile mapeada
+     (`digitacao_analitico`, dado por proposta individual, não apuração mensal). Abas "Digitação" e
+     "Produção" do mesmo dashboard ainda não mapeadas.
+- **9 métricas distintas no total.** Convenção importante (ver `rpa-conventions` itens 16-17): quando
+  uma tile é ROLLUP de outra já mapeada (mesma comissão/produção, granularidade diferente), o
+  `metric_name` é sempre diferente pra não somar em dobro num total ingênuo — validado empiricamente
+  (soma da versão "por filial" bate exatamente com a versão sem filial, conferido rodando o parser
+  contra os arquivos reais antes de gravar qualquer coisa).
+- `column_mapping` de uma tile pode ser um dict (1 métrica) ou uma lista de dicts (várias métricas do
+  MESMO arquivo baixado) — extensão feita quando apareceu o primeiro caso real de tile com mais de um
+  número que valia a pena virar métrica separada.
+- Suporte a `filter_query` (URL de filtro completa, colada verbatim) além do `filter_param`/
+  `filter_value` simples de antes — necessário pro relatório `acompanhamento_veiculos`, que tem
+  dezenas de parâmetros de filtro.
+- **Proteção contra duplicata/perda de dado** em `run_pipeline()`: cada rodada apaga as métricas já
+  existentes daquela fonte na janela de datas antes de inserir as novas — idempotente, não empilha
+  registro repetido rodando várias vezes.
+- 486 registros reais gravados em produção (Postgres do Render), confirmados no dashboard.
 
-**Pendente dentro do mesmo relatório:**
-- `column_mapping` das tiles "Detalhamento", "Detalhamento por Filial" e "Qtde por Alçadas" (arquivos já
-  baixam certo, só não são parseados ainda — ver `portal_selectors.json`)
+**Pendente dentro dos relatórios já mapeados:**
+- `column_mapping` da tile "Qtde por Alçadas" (comissao_avista) — arquivo já baixa certo, só não é
+  parseado ainda (ver `portal_selectors.json`).
+- Abas "Digitação" e "Produção" do dashboard `acompanhamento_veiculos` (só "Analítico" mapeada até
+  agora).
 
 **Feito (primeira ingestão real em produção, 2026-09-01):** 🎉
 - Rodado manualmente (da máquina do usuário, reaproveitando o perfil de navegador já aprovado, gravando
