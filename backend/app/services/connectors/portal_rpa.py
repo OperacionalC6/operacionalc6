@@ -366,12 +366,19 @@ class PortalRpaConnector(DataConnector):
                 for col in mapping.get("dimension_columns", [])
                 if col in df.columns
             }
+            value = PortalRpaConnector._parse_brl_value(row[mapping["value_column"]])
+            if pd.isna(value):
+                # Célula de valor vazia (ex.: mês corrente ainda sem apuração/estimativa
+                # calculada) — diferente de dimensão NaN (vira None/null), aqui não tem
+                # como gravar 'NaN' numa métrica sem quebrar soma/média futura em SQL.
+                # Pular a linha é melhor que gravar um valor inválido.
+                continue
             records.append(
                 ConnectorRecord(
                     team_name=str(row[mapping["team_column"]]) if mapping.get("team_column") else None,
                     metric_date=row[mapping["date_column"]],
                     metric_name=mapping["metric_name"],
-                    value=PortalRpaConnector._parse_brl_value(row[mapping["value_column"]]),
+                    value=value,
                     dimensions=dimensions or None,
                 )
             )

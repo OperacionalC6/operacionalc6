@@ -233,6 +233,30 @@
             }
           }
         ]
+      },
+      {
+        "name": "painel_carteira",
+        "description": "Card 'Carteira' no hub One Page - cadastro de lojas da carteira com potencial de mercado mensal por loja e hierarquia comercial (cidade, rede, regional, filial, GP/GN).",
+        "dashboard_slug": "corp_consignado_embed::00235_auto",
+        "filter_query": "Refer%C3%AAncia=2026&Classifica%C3%A7%C3%A3o=&Concession%C3%A1ria=&GP=&SUPERVISOR=&GN=&Gerente+Coordenador=&Gerente+Neg%C3%B3cios=&Filial=&Loja=&Nm+Regional=&Nm+Rede=",
+        "_filter_nota": "Copiado verbatim da URL real compartilhada pelo usuário em 2026-09-02. Único filtro ativo: 'Referência=2026' (restringe ao ano corrente) — os demais ficam vazios/sem restrição.",
+        "download_wait_ms": 60000,
+        "tiles": [
+          {
+            "key": "carteira",
+            "name": "Carteira",
+            "column_mapping": {
+              "_origem": "Extraído do XLSX real baixado em 2026-09-02 (4002 linhas — uma por loja/mês, histórico de vários meses de 2026 por loja).",
+              "_natureza_nota": "Não é um relatório de comissão/produção — é o cadastro/hierarquia comercial das lojas da carteira, com o potencial de mercado ('Mercado') estimado mês a mês por loja. Útil pra enriquecer outras métricas (ex.: cruzar 'Filial' com Cidade/Rede/Regional) e pra identificar lojas com potencial não explorado.",
+              "date_column": "Anomes",
+              "date_format": "%Y%m",
+              "value_column": "Mercado",
+              "metric_name": "mercado_potencial",
+              "team_column": null,
+              "dimension_columns": ["Cnpj Da Loja", "Cd Loja", "Loja", "Cidade", "Rede", "Regional", "Filial", "GP", "GN", "Classificação", "Atendimento", "Parceiro Atendimento", "Master", "Retorno", "Acordo", "Comissão Seguros"]
+            }
+          }
+        ]
       }
     ]
   }
