@@ -71,12 +71,30 @@
           {
             "key": "detalhamento",
             "name": "Comissão À Vista - Detalhamento",
-            "column_mapping": null
+            "column_mapping": {
+              "_origem": "Extraído do CSV real baixado em 2026-09-01.",
+              "_metric_name_nota": "Nome DIFERENTE de 'comissao_avista' de propósito: essa tile é um ROLLUP (agregado por Master+Parceiro+Produto) da MESMA comissão já contada por contrato na tile Analítico. Usar o mesmo metric_name faria a comissão ser somada em dobro num total ingênuo (SUM por metric_name). Serve só pra visões de detalhamento, não entra na soma principal do dashboard.",
+              "date_column": "Anomes Apuracao",
+              "date_format": "%Y%m",
+              "value_column": "R$ Comissão À Vista Bruto - Parceiro",
+              "metric_name": "comissao_avista_detalhamento",
+              "team_column": null,
+              "dimension_columns": ["Cnpj Master", "Master", "Cnpj Corban", "Parceiro", "Produto"]
+            }
           },
           {
             "key": "detalhamento_por_filial",
             "name": "Comissão À Vista - Detalhamento por Filial",
-            "column_mapping": null
+            "column_mapping": {
+              "_origem": "Extraído do CSV real baixado em 2026-09-01. Cabeçalho tem um campo entre aspas com quebra de linha interna ('R$ Comissão À Vista Bruto - Master') — o parser padrão do pandas (sem sep=None/engine=python, ver lição 7 da skill rpa-conventions) lida com isso normalmente.",
+              "_metric_name_nota": "Mesmo motivo da tile 'Detalhamento': é ROLLUP da mesma comissão (agora também por Filial), não soma junto com 'comissao_avista' pra não contar em dobro.",
+              "date_column": "Anomes Apuracao",
+              "date_format": "%Y%m",
+              "value_column": "R$ Comissão À Vista Bruto - Parceiro",
+              "metric_name": "comissao_avista_por_filial",
+              "team_column": null,
+              "dimension_columns": ["Cnpj Master", "Master", "Cnpj Corban", "Parceiro", "Filial", "Produto"]
+            }
           },
           {
             "key": "analitico",
@@ -95,7 +113,8 @@
           {
             "key": "qtde_por_alcadas",
             "name": "Comissão À Vista - Qtde por Alçadas",
-            "column_mapping": null
+            "column_mapping": null,
+            "_nota": "Deixado sem mapear de propósito (2026-09-01): o CSV real tem cabeçalho pivotado em duas linhas (linha 1 agrupa 'Fg Spf: SIM/SIM/SIM/SIM/NÃO/NÃO/NÃO/NÃO', linha 2 repete 'Qtde Contratos/%/Qtde Total/% Total' pra cada grupo) — não encaixa no formato genérico de column_mapping (1 coluna de data + 1 de valor + dimensões). Precisaria de parsing especial em código, não só configuração. Baixa prioridade: é uma quebra de contratos por faixa de rentabilidade, não essencial pro dashboard inicial."
           }
         ]
       }
