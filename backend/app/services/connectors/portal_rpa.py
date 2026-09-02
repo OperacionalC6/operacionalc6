@@ -268,7 +268,12 @@ class PortalRpaConnector(DataConnector):
         """
         looker_cfg = self._config["looker"]
         url = f"{looker_cfg['base_url']}/embed/dashboards/{report_cfg['dashboard_slug']}"
-        if report_cfg.get("filter_param") and report_cfg.get("filter_value"):
+        if report_cfg.get("filter_query"):
+            # Query string completa, já codificada, copiada direto da URL real do
+            # dashboard (usada quando o relatório tem muitos filtros — mais simples
+            # e mais fiel colar a URL toda do que tentar reconstruir cada parâmetro).
+            url += f"?{report_cfg['filter_query']}"
+        elif report_cfg.get("filter_param") and report_cfg.get("filter_value"):
             url += (
                 f"?{quote(report_cfg['filter_param'])}="
                 f"{quote(report_cfg['filter_value'])}"

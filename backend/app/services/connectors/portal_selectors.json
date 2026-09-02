@@ -208,6 +208,31 @@
             ]
           }
         ]
+      },
+      {
+        "name": "acompanhamento_veiculos",
+        "description": "Card 'Acompanhamento Veículos' no hub One Page - dado por PROPOSTA individual (funil digitação → aprovação → pagamento), não apuração mensal. Só a tile 'Analítico' mapeada por enquanto (abas 'Digitação' e 'Produção' do mesmo dashboard ainda não).",
+        "dashboard_slug": "corp_consignado_embed::00087",
+        "filter_query": "Tipo+Exibicao=qtde%5E_propostas&Tipo+Veiculo=&Tipo+Pessoa=&Dt+Relatorio+Date=30+day&Lojista=&Status+Proposta=&Fase=&GP=&SUPERVISOR=&GN=&Tipo+Cupom=&Tp+Atendimento=CORBAN&Equipe+de+venda=&Grupo=&AUTOSHOPPING=&Shopping=&Concessionaria=&Rede=&Rede+%2B+Regional=&Plataforma=&Filial=&Classificacao+Loja=&UF+Loja=&Cidade+Loja=&Bairro+Loja=&A%C3%A7%C3%A3o+Loja=&Onda+Lib+URL=&Quebra=&ID+Proposta=&CPF=&Idade+Do+Bem=&Rating+Cliente=&S+Cliente=&Gerente+Coordenador+Meta=&Gerente+Neg%C3%B3cios+Meta=&Gerente+Coordenador+Corban=&Gerente+Neg%C3%B3cios+Corban=&Cd+Loja=",
+        "_filter_nota": "Copiado verbatim da URL real compartilhada pelo usuário em 2026-09-02 (muitos filtros, a maioria vazia = sem restrição) — usa `filter_query` em vez de filter_param/filter_value por ter parâmetros demais pra valer a pena reconstruir um por um. Filtro ativo relevante: 'Dt Relatorio Date=30 day' (janela rolante de 30 dias) e 'Tp Atendimento=CORBAN'.",
+        "download_wait_ms": 60000,
+        "tiles": [
+          {
+            "key": "analitico",
+            "name": "Analítico",
+            "column_mapping": {
+              "_origem": "Extraído do XLSX real baixado em 2026-09-02 (500 linhas, uma por proposta).",
+              "_natureza_nota": "Diferente dos outros relatórios: aqui `metric_date` é a data REAL da proposta (coluna 'Dt Relatório', já datetime — sem date_format), não o mês de uma apuração fechada. Cada linha é uma proposta individual, não uma agregação.",
+              "_pii_nota": "Colunas de dado pessoal do cliente final (Cpf, Nm Cliente, Telefone Comercial, Nr Placa, Nr Chassi) DELIBERADAMENTE fora de dimension_columns — não há necessidade identificada de guardar isso pra métricas agregadas. Reavaliar só se houver necessidade real de rastreabilidade por cliente.",
+              "date_column": "Dt Relatório",
+              "date_format": null,
+              "value_column": "Vl Financiamento",
+              "metric_name": "digitacao_analitico",
+              "team_column": null,
+              "dimension_columns": ["Lojista", "GP", "GN", "Status Proposta", "Nm Fase", "Ds Marca", "Ds Modelo", "Tipo Cupom", "Filial", "Usuario", "Idade do Veículo", "Vl Solicitado", "Vl Principal", "(R$) Seguro Prestamista", "(R$) Seguro AP"]
+            }
+          }
+        ]
       }
     ]
   }
