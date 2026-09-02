@@ -117,6 +117,22 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     confirmação de que a automação é sancionada; (b) rodar o agendamento a partir da rede/máquina do
     usuário (já aceita pelo portal), via Agendador de Tarefas do Windows — não dentro do Render.
 
+16. **Uma tile pode trazer mais de um número que merece virar métrica separada** (ex.: tile "Comissão
+    Total" traz À Vista e Carteira na mesma linha; "Bloco de Metas" traz Produção e Seguros).
+    `column_mapping` agora aceita uma LISTA de mappings (além do dict único de antes) — cada um gera
+    registros independentes do mesmo arquivo baixado, sem baixar de novo. Ver `apuracao_parceiro_resumo`
+    em `portal_selectors.json` pra exemplo real.
+
+17. **Cuidado com "rollup" vs "detalhe" trazendo o MESMO valor por caminhos diferentes.** Vários
+    relatórios do C6 mostram a mesma comissão/produção agregada em granularidades diferentes (por
+    contrato, por Master+Produto, por Filial...). Se dois mappings usam o mesmo `metric_name`, somar no
+    dashboard conta o valor em dobro/triplo. Convenção adotada: dar um `metric_name` DIFERENTE pra cada
+    granularidade (ex.: `comissao_avista` no nível mais granular, `comissao_avista_por_filial` no rollup
+    por filial) e documentar no `_metric_name_nota` do mapping por quê. Sempre que mapear uma tile nova,
+    verifique se a soma dela bate com alguma métrica já mapeada antes de decidir o nome — se bater, é
+    rollup, não dado novo (validamos isso rodando o parser contra os arquivos reais antes de gravar no
+    banco, não adivinhando).
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por
