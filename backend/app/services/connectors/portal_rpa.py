@@ -127,7 +127,8 @@ class PortalRpaConnector(DataConnector):
                     for downloaded_file, tile_cfg in self._download_looker_tiles(
                         page, looker_report_cfg
                     ):
-                        if not tile_cfg.get("column_mapping"):
+                        mapping_cfg = tile_cfg.get("column_mapping")
+                        if not mapping_cfg:
                             logger.info(
                                 "Tile '%s' baixada em %s mas sem column_mapping "
                                 "definido ainda — pulando parsing (arquivo fica "
@@ -136,9 +137,18 @@ class PortalRpaConnector(DataConnector):
                                 downloaded_file,
                             )
                             continue
-                        records.extend(
-                            self._parse_report(downloaded_file, tile_cfg, date_from, date_to)
-                        )
+                        # column_mapping pode ser um dict único (1 métrica) ou uma lista
+                        # de dicts (várias métricas extraídas do MESMO arquivo baixado) —
+                        # necessário porque uma tile do Looker pode trazer mais de um
+                        # número que vale a pena virar métrica separada (ex.: tile
+                        # "Comissão Total" traz À Vista E Carteira na mesma linha).
+                        mappings = mapping_cfg if isinstance(mapping_cfg, list) else [mapping_cfg]
+                        for mapping in mappings:
+                            records.extend(
+                                self._parse_report(
+                                    downloaded_file, {"column_mapping": mapping}, date_from, date_to
+                                )
+                            )
             except Exception:
                 self._save_failure_artifacts(page)
                 raise

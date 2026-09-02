@@ -117,6 +117,97 @@
             "_nota": "Deixado sem mapear de propósito (2026-09-01): o CSV real tem cabeçalho pivotado em duas linhas (linha 1 agrupa 'Fg Spf: SIM/SIM/SIM/SIM/NÃO/NÃO/NÃO/NÃO', linha 2 repete 'Qtde Contratos/%/Qtde Total/% Total' pra cada grupo) — não encaixa no formato genérico de column_mapping (1 coluna de data + 1 de valor + dimensões). Precisaria de parsing especial em código, não só configuração. Baixa prioridade: é uma quebra de contratos por faixa de rentabilidade, não essencial pro dashboard inicial."
           }
         ]
+      },
+      {
+        "name": "apuracao_parceiro_resumo",
+        "description": "Apuração Parceiro 2.0 > Resumo Apuração Parceiro 2.0. 4 tiles nesta aba. Dashboard Looker DIFERENTE do 'comissao_avista' (slug próprio), não é só uma aba do mesmo.",
+        "dashboard_slug": "corp_consignado_embed::01532_auto",
+        "filter_param": "Safra Mês",
+        "filter_value": "6 month",
+        "_filter_nota": "Valor real observado na URL compartilhada pelo usuário em 2026-09-01: '6 month' (singular, sem 's' — diferente de '2 months' usado no relatório comissao_avista). Não confirmamos se Looker aceita as duas sintaxes indistintamente; mantido exatamente como veio da URL real, não arriscar trocar sem testar.",
+        "download_wait_ms": 60000,
+        "tiles": [
+          {
+            "key": "emissao_nota_fiscal",
+            "name": "Emissão Nota Fiscal",
+            "column_mapping": {
+              "_origem": "Extraído do XLSX real baixado em 2026-09-01. Diferente do CSV: números já vêm limpos (float/int nativos, sem 'R$'/vírgula de milhar) — _parse_brl_value já trata isso (aceita int/float direto, só faz replace de texto se vier string).",
+              "_metric_name_nota": "Só extrai a coluna Líquida (após IR/ISS/PCC) — a Bruta dessa tile é idêntica, linha a linha, ao TOTAL Bruto calculado na tile 'Comissão Total' (mesmo dashboard). Gravar as duas duplicaria o mesmo valor.",
+              "date_column": "Anomes Apuracao",
+              "date_format": "%Y%m",
+              "value_column": "R$ Comissão TOTAL Liquida - Parceiro",
+              "metric_name": "comissao_liquida",
+              "team_column": null,
+              "dimension_columns": ["Cnpj Master", "Master", "Cnpj Corban", "Parceiro", "Status Pagamento", "Dt Pagamento Date", "Status Nf"]
+            }
+          },
+          {
+            "key": "comissao_total",
+            "name": "Comissão Total",
+            "column_mapping": [
+              {
+                "_origem": "Extraído do XLSX real baixado em 2026-09-01.",
+                "_metric_name_nota": "Só extrai Carteira (dado NOVO, não coberto em nenhum outro relatório mapeado). 'R$ Comissão À Vista Bruto - Parceiro' nessa tile é ROLLUP idêntico ao já coberto pelo relatório 'comissao_avista' (dashboard corp_consignado_embed::01526_auto) — não repetir. 'TOTAL Bruto' é só a soma À Vista+Carteira; se precisar do total, soma os metric_names 'comissao_avista' + 'comissao_carteira' na hora de exibir, não precisa gravar um terceiro valor redundante.",
+                "date_column": "Anomes Apuracao",
+                "date_format": "%Y%m",
+                "value_column": "R$ Comissão Carteira Bruto - Parceiro",
+                "metric_name": "comissao_carteira",
+                "team_column": null,
+                "dimension_columns": ["Cnpj Master", "Master", "Cnpj Corban", "Parceiro"]
+              }
+            ]
+          },
+          {
+            "key": "bloco_metas",
+            "name": "Bloco de Metas",
+            "column_mapping": [
+              {
+                "_origem": "Extraído do XLSX real baixado em 2026-09-01. Métrica NOVA: volume de produção (não é comissão, é o valor total financiado/produzido).",
+                "date_column": "Anomes Apuracao",
+                "date_format": "%Y%m",
+                "value_column": "R$ Produção",
+                "metric_name": "producao",
+                "team_column": null,
+                "dimension_columns": ["Cnpj Master", "Master", "Cnpj Corban", "Parceiro", "R$ Meta Produção", "% Ating. Produção", "Faixa Atingimento"]
+              },
+              {
+                "_origem": "Extraído do XLSX real baixado em 2026-09-01. Métrica NOVA: produção de seguros.",
+                "date_column": "Anomes Apuracao",
+                "date_format": "%Y%m",
+                "value_column": "R$ Seguros",
+                "metric_name": "seguros",
+                "team_column": null,
+                "dimension_columns": ["Cnpj Master", "Master", "Cnpj Corban", "Parceiro", "R$ Meta Seguros", "% Ating. Seguros"]
+              }
+            ]
+          },
+          {
+            "key": "bloco_metas_por_filial",
+            "name": "Bloco de Metas - Por Filial",
+            "column_mapping": [
+              {
+                "_origem": "Extraído do XLSX real baixado em 2026-09-01.",
+                "_metric_name_nota": "Mesmo motivo do padrão 'comissao_avista_por_filial': é ROLLUP da mesma produção já coberta pela tile 'Bloco de Metas' (agora por Filial) — metric_name diferente ('producao_por_filial') pra não somar em dobro com 'producao'.",
+                "date_column": "Anomes Apuracao",
+                "date_format": "%Y%m",
+                "value_column": "R$ Produção",
+                "metric_name": "producao_por_filial",
+                "team_column": null,
+                "dimension_columns": ["Cnpj Master", "Master", "Cnpj Corban", "Parceiro", "Filial", "R$ Meta", "% Ating. Produção", "Faixa Atingimento"]
+              },
+              {
+                "_origem": "Extraído do XLSX real baixado em 2026-09-01.",
+                "_metric_name_nota": "Mesmo motivo: ROLLUP de 'seguros' já coberto na tile 'Bloco de Metas', agora por Filial.",
+                "date_column": "Anomes Apuracao",
+                "date_format": "%Y%m",
+                "value_column": "R$ Seguros",
+                "metric_name": "seguros_por_filial",
+                "team_column": null,
+                "dimension_columns": ["Cnpj Master", "Master", "Cnpj Corban", "Parceiro", "Filial", "R$ Meta Seguros", "% Ating. Seguros"]
+              }
+            ]
+          }
+        ]
       }
     ]
   }
