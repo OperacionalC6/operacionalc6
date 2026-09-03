@@ -182,6 +182,20 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     loja) de dentro de `dimensions`, normalizar pra string antes de comparar — nunca assumir o
     tipo sem checar contra um export real (`df[col].dtype`).
 
+22. **CSV/XLSX do Looker baixa com sucesso (sem erro/timeout) mas vem VAZIO (0 linhas, só
+    cabeçalho).** Não é bug de seletor nem de parsing — pipeline conclui "com sucesso" e
+    silenciosamente ingere 0 registros pra aquele metric_name, sem log de erro nenhum (só
+    reparado comparando a contagem no banco). Descoberto em 2026-09-03 no `painel_visita_mercado`:
+    o filtro `Dt Referência Month` é um MÊS FIXO (não uma janela relativa), e pedir o mês
+    CORRENTE (`{current_month}`) nos primeiros dias do mês retornou vazio — o Looker
+    provavelmente ainda não tinha calculado esse relatório específico pro mês corrente. Mesma
+    causa raiz do item 11 (comissao_avista com "this month"), só que sem uma janela relativa
+    disponível pra contornar. Corrigido criando um segundo placeholder, `{last_closed_month}`
+    (mês ANTERIOR ao corrente, calculado em `_download_looker_tiles`), usado no lugar de
+    `{current_month}` pra esse relatório. Lição: ao mapear um relatório novo de "mês fixo", não
+    assumir que `{current_month}` sempre tem dado disponível — se o CSV baixado vier vazio,
+    checar `len(df)` antes de suspeitar de parsing, e considerar usar o mês anterior por padrão.
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por

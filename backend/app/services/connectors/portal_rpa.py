@@ -34,7 +34,7 @@ import json
 import logging
 import os
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
@@ -275,8 +275,18 @@ class PortalRpaConnector(DataConnector):
             # {current_month} é substituído pelo mês corrente (AAAA-MM) — necessário
             # pra filtros de "mês de referência" fixo (não são uma janela relativa
             # tipo "6 month"/"30 day" que o próprio Looker já rola sozinho).
-            filter_query = report_cfg["filter_query"].replace(
-                "{current_month}", datetime.now().strftime("%Y-%m")
+            # {last_closed_month} é o mês ANTERIOR ao corrente — necessário quando o
+            # relatório de mês fixo ainda não tem dado calculado pro mês corrente
+            # (mesmo motivo de `filter_value: "2 months"` no comissao_avista, ver
+            # rpa-conventions item 11/22): descoberto em 2026-09-03 com
+            # painel_visita_mercado retornando 0 linhas (CSV só com cabeçalho) ao
+            # pedir o mês corrente nos primeiros dias do mês.
+            primeiro_dia_mes_corrente = datetime.now().replace(day=1)
+            last_closed_month = (primeiro_dia_mes_corrente - timedelta(days=1)).strftime("%Y-%m")
+            filter_query = (
+                report_cfg["filter_query"]
+                .replace("{current_month}", datetime.now().strftime("%Y-%m"))
+                .replace("{last_closed_month}", last_closed_month)
             )
             url += f"?{filter_query}"
         elif report_cfg.get("filter_param") and report_cfg.get("filter_value"):
