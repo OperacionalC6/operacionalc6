@@ -196,6 +196,15 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     assumir que `{current_month}` sempre tem dado disponível — se o CSV baixado vier vazio,
     checar `len(df)` antes de suspeitar de parsing, e considerar usar o mês anterior por padrão.
 
+23. **`ValueError: could not convert string to float: '151.9 mil'` em `_parse_brl_value`.**
+    Alguns relatórios (confirmado no `painel_visita_mercado`, 2026-09-03) abreviam números
+    grandes em vez de escrever por extenso: `"151.9 mil"` (×1.000), `"1.6 MM"` (×1.000.000) —
+    ponto como decimal, igual ao resto do locale do Looker. Nem todo valor da coluna vem
+    abreviado (`"0"` aparece puro, sem "mil"). `_parse_brl_value` agora reconhece esse padrão
+    via `_ABREVIACAO_RE` antes de cair no parsing padrão (`R$ x,xxx.xx`). Se aparecer uma
+    abreviação nova (ex.: "bi" pra bilhão), é só adicionar ao dict `_MULTIPLICADOR_POR_SUFIXO`
+    — mas confirme o multiplicador contra um valor real antes de assumir (não adivinhar).
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por

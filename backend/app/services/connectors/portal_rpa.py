@@ -33,6 +33,7 @@ durante uma requisição HTTP.
 import json
 import logging
 import os
+import re
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -353,18 +354,30 @@ class PortalRpaConnector(DataConnector):
         )
         return dest
 
+    # Alguns relatórios (ex.: painel_visita_mercado) abreviam números grandes em vez
+    # de escrever por extenso — descoberto em teste real 2026-09-03: "151.9 mil"
+    # (×1.000), "1.6 MM" (×1.000.000). Ponto como decimal, igual ao resto do locale
+    # do Looker — não confundir com o separador de milhar BR tradicional.
+    _ABREVIACAO_RE = re.compile(r"^(-?[\d.]+)\s*(mil|mm|mi)$", re.IGNORECASE)
+    _MULTIPLICADOR_POR_SUFIXO = {"mil": 1_000, "mm": 1_000_000, "mi": 1_000_000}
+
     @staticmethod
     def _parse_brl_value(raw: object) -> float:
         """
         Colunas monetárias dos exports Looker vêm formatadas como texto, ex.:
         'R$ 653,440.00' (vírgula de milhar, ponto decimal — não é o formato
         BR tradicional, é o locale do Looker). Remove o prefixo e a vírgula
-        antes de converter.
+        antes de converter. Também trata abreviação tipo '151.9 mil'/'1.6 MM'
+        (ver `_ABREVIACAO_RE`).
         """
         if isinstance(raw, (int, float)):
             return float(raw)
-        cleaned = str(raw).replace("R$", "").replace(",", "").strip()
-        return float(cleaned)
+        cleaned = str(raw).replace("R$", "").strip()
+        match = PortalRpaConnector._ABREVIACAO_RE.match(cleaned)
+        if match:
+            numero, sufixo = match.groups()
+            return float(numero) * PortalRpaConnector._MULTIPLICADOR_POR_SUFIXO[sufixo.lower()]
+        return float(cleaned.replace(",", ""))
 
     @staticmethod
     def _parse_report(
