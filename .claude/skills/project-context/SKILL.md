@@ -38,13 +38,13 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
   nem rodando na máquina dele. Código já está na organização GitHub `OperacionalC6` (transferido de
   `sguedesfelipe/operacionalc6` em 2026-08-18). Contas de Render/Vercel: ver "Status atual".
 
-## Status atual (2026-09-02)
+## Status atual (2026-09-03)
 
 **Funcionando e validado contra o portal real:**
 - Login no WebAutorizador (`backend/app/services/connectors/portal_rpa.py`)
 - Acesso aos dashboards Looker (via bootstrap — ver skill `rpa-conventions`)
-- **3 relatórios Looker mapeados e validados** (todos com dados reais fornecidos pelo usuário, não
-  seletores adivinhados — ver `portal_selectors.json`):
+- **6 relatórios Looker mapeados** (todos com dados reais fornecidos pelo usuário, não seletores
+  adivinhados — ver `portal_selectors.json`), **14 métricas distintas no total**:
   1. `comissao_avista` (dashboard `corp_consignado_embed::01526_auto`) — 4 tiles, 3 mapeadas
      (`comissao_avista`, `comissao_avista_detalhamento`, `comissao_avista_por_filial`); "Qtde por
      Alçadas" deixada pra depois (cabeçalho pivotado, precisa parsing especial).
@@ -54,7 +54,14 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
   3. `acompanhamento_veiculos` (dashboard `corp_consignado_embed::00087`) — 1 tile mapeada
      (`digitacao_analitico`, dado por proposta individual, não apuração mensal). Abas "Digitação" e
      "Produção" do mesmo dashboard ainda não mapeadas.
-- **9 métricas distintas no total.** Convenção importante (ver `rpa-conventions` itens 16-17): quando
+  4. `painel_carteira` (dashboard `corp_consignado_embed::00235_auto`) — 1 tile mapeada
+     (`mercado_potencial`).
+  5. `apuracao_comissao_carteira` (dashboard `corp_consignado_embed::01512_auto`) — 2 tiles mapeadas
+     (`comissao_carteira_detalhamento`, rollup; `carteira_saldo`, saldo de carteira, dado novo).
+  6. `painel_visita_mercado` (dashboard `corp_consignado_embed::00305_visitas`) — 1 tile, 2 métricas
+     (`mercado_producao_c6`, `mercado_financiamento_total`); usa `{current_month}` no `filter_query`
+     porque o filtro é um mês fixo, não uma janela relativa.
+- **Convenção importante** (ver `rpa-conventions` itens 16-17): quando
   uma tile é ROLLUP de outra já mapeada (mesma comissão/produção, granularidade diferente), o
   `metric_name` é sempre diferente pra não somar em dobro num total ingênuo — validado empiricamente
   (soma da versão "por filial" bate exatamente com a versão sem filial, conferido rodando o parser
@@ -75,6 +82,15 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
   parseado ainda (ver `portal_selectors.json`).
 - Abas "Digitação" e "Produção" do dashboard `acompanhamento_veiculos` (só "Analítico" mapeada até
   agora).
+- **Validação "testar tudo isso contra produção agora" (em andamento, 2026-09-02/03):** rodando o
+  pipeline manual contra o banco de produção pra validar os 6 relatórios de ponta a ponta. Já
+  confirmados contra o portal real nesse teste: `comissao_avista` (de novo) e `apuracao_parceiro_resumo`
+  (após corrigir 2 nomes de tile — ver `rpa-conventions` item 18) e `acompanhamento_veiculos`. Ainda
+  faltam confirmar `painel_carteira` (parcial), `apuracao_comissao_carteira` e `painel_visita_mercado`
+  contra o portal real — esses dois últimos nunca foram exercitados de verdade, então o mesmo risco de
+  nome de tile divergente (item 18) pode aparecer neles. Nesse teste também foi corrigido um flake
+  intermitente de timeout no download de tile (`rpa-conventions` item 19, retry adicionado em
+  `_download_tile`).
 
 **Feito (primeira ingestão real em produção, 2026-09-01):** 🎉
 - Rodado manualmente (da máquina do usuário, reaproveitando o perfil de navegador já aprovado, gravando
@@ -97,10 +113,19 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
   pipeline, agora também no lado de leitura).
 
 **Ainda não iniciado:**
-- Mapear os outros relatórios do hub "One Page - Auto" (ex.: Apuração Comissão Carteira, Apuração Parceiro
-  - Histórica, Resumo Apuração Parceiro 2.0, Painel Visita - Mercado, e outros cards fora da aba "Auto")
-- `column_mapping` das 3 tiles restantes do relatório já mapeado ("Detalhamento", "Detalhamento por
-  Filial", "Qtde por Alçadas") — arquivos já baixam certo, só não são parseados ainda.
+- Terminar a validação end-to-end contra produção dos 2 relatórios nunca exercitados contra o portal
+  real (`apuracao_comissao_carteira`, `painel_visita_mercado`) — ver item logo acima.
+- `column_mapping` da tile "Qtde por Alçadas" (comissao_avista) — arquivo já baixa certo, só não é
+  parseado ainda.
+- **Backlog do usuário (lista literal dele, 2026-09-02), na ordem em que foi dada:**
+  1. Configurar e validar as informações (em andamento — é a validação contra produção citada acima).
+  2. Checagem/proteção contra dado duplicado ou perdido quando rodar mais de uma vez — **já resolvido**
+     (ver "proteção contra duplicata/perda de dado" acima, `run_pipeline()` substitui a janela de datas
+     em vez de empilhar).
+  3. Construir uma visão de dashboard que gere valor e insights (frontend hoje só mostra total + tabela
+     bruta — não iniciado).
+  4. Mapear os demais relatórios importantes que ainda não baixamos — 6 novos já mapeados nesta sessão;
+     seguir mapeando outros cards do hub "One Page - Auto" fora da aba "Auto" se o usuário pedir mais.
 - ~~Configurar o robô pra rodar sozinho DENTRO do Render~~ — **tentado e descartado em 2026-09-01**:
   o Cloudflare do C6 bloqueia ativamente a conexão vinda do datacenter do Render (Oregon/EUA) —
   `"Sorry, you have been blocked"`, confirmado por print de falha real. Não é bug de código, é defesa
