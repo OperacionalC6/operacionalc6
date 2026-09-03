@@ -160,12 +160,12 @@ fórmulas derivadas). Migration `0002_config_tables`. Lógica de importação em
 do pipeline de métricas). Endpoints em `app/api/routes/config_data.py`
 (`GET /config-data/status`, `POST /config-data/{table}/upload`, admin-only, audit-logado).
 
-**Carga inicial pendente de rodar contra produção**: `app/seed_config.py`, testado localmente contra
-o `Construcao.xlsx` real do usuário (todas as ~5100 linhas das 6 abas importadas sem descarte no nível
-Python/pandas) mas **ainda não concluído contra o Postgres de produção** — falta o usuário (ou eu,
-quando tiver a env var) rodar `python -m app.seed_config /caminho/para/Construcao.xlsx` localmente
-(mesmo padrão de rodar o pipeline manual), depois que a migration mais recente for aplicada
-(`alembic upgrade head`).
+**Carga inicial CONCLUÍDA contra produção (2026-09-03)** 🎉: `python -m app.seed_config` rodado com
+sucesso contra o Postgres de produção — 4005 `store_registry_monthly`, 522 `store_commercial_terms`,
+108 `gn_assignments`, 45 `commission_rate_tiers`, 9 `alcada_discount_rules`, 439 `contract_overrides`.
+Dois bugs reais encontrados e corrigidos nas duas primeiras tentativas (ver abaixo) — nenhum na
+terceira. Fase 1 completa. Reimportar no futuro: `python -m app.seed_config /caminho/para/Construcao.xlsx`
+(substitui cada tabela por inteiro) ou `POST /config-data/{table}/upload`.
 
 **Bug real na primeira tentativa de carga (2026-09-03)**: `psycopg.errors.NumericValueOutOfRange` em
 `store_registry_monthly.mercado` — a coluna "Mercado" de `db_carterizacao`/`config_carteira` **não é
