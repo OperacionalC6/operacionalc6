@@ -145,6 +145,20 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     Corrigido assumindo que o robô SEMPRE vai bater nesse erro na primeira vez que visita um dashboard
     novo — não dá pra confiar no texto da barra preta sem confirmar contra o HTML real.
 
+19. **`TimeoutError: Timeout ... exceeded while waiting for event "download"` numa tile que a tela mostra
+    CHEIA de dados no print de falha (não "No Results") — E que já baixou certinho minutos antes no
+    mesmo run.** Confirmado em teste real contra produção (2026-09-02, relatório `apuracao_parceiro_resumo`,
+    tile "Resumo - Valores Emissão NF" — nome já corrigido pelo item 18, então não era mismatch de
+    aria-label). Diferente do item 12 (que é a tile ainda carregando), aqui a causa é flake intermitente
+    no próprio sequenciamento de clique do menu do Looker (o menu "Tile actions" às vezes não abre a
+    tempo do clique seguinte "pegar"). Corrigido extraindo o download de uma tile pra um método
+    `_download_tile`, decorado com o mesmo `@retry(stop=stop_after_attempt(2), wait=wait_exponential(...))`
+    já usado em `_login` — e com um `page.keyboard.press("Escape")` antes de cada tentativa, pra fechar
+    qualquer menu que tenha ficado aberto de um clique anterior que falhou (evita que a segunda tentativa
+    clique de novo em cima de um menu já aberto e feche ele por engano). Se esse erro persistir mesmo após
+    a segunda tentativa, aí sim revisitar a suspeita do item 12 (esperar um seletor de "tile carregou" por
+    tile, não só a primeira).
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por

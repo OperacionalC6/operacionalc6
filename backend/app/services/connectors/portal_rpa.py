@@ -298,33 +298,50 @@ class PortalRpaConnector(DataConnector):
         download_menu_item = looker_cfg.get("download_menu_item_text", "Download data")
         results: list[tuple[Path, dict]] = []
         for tile in report_cfg["tiles"]:
-            with page.expect_download(
-                timeout=report_cfg.get("download_wait_ms", 20000)
-            ) as download_info:
-                page.get_by_role("button", name=f"{tile['name']} - Tile actions").click()
-                page.get_by_text(download_menu_item, exact=True).click()
-                # "Download data" abre um modal (formato do arquivo, já vem CSV
-                # selecionado por padrão) em vez de baixar direto — confirmado
-                # em teste real. Falta confirmar clicando no botão "Download"
-                # do modal.
-                page.get_by_role("button", name="Download", exact=True).click()
-            download = download_info.value
-
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            dest = (
-                _ARTIFACTS_DIR
-                / f"{report_cfg['name']}_{tile['key']}_{timestamp}"
-                f"{Path(download.suggested_filename).suffix}"
-            )
-            download.save_as(dest)
-            logger.info(
-                "Tile '%s' do relatório Looker '%s' baixado em %s",
-                tile["name"],
-                report_cfg["name"],
-                dest,
-            )
+            dest = self._download_tile(page, tile, report_cfg, download_menu_item)
             results.append((dest, tile))
         return results
+
+    @retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=3, max=15))
+    def _download_tile(
+        self, page: Page, tile: dict, report_cfg: dict, download_menu_item: str
+    ) -> Path:
+        """
+        Descoberto em teste real contra produção: o clique em "Tile actions"
+        às vezes não "pega" mesmo com a tile já totalmente renderizada (flake
+        intermitente do menu do Looker, não erro de configuração — a mesma
+        tile já havia baixado certinho minutos antes no mesmo run). Igual ao
+        _login, uma segunda tentativa resolve. O Escape antes de cada
+        tentativa fecha qualquer menu que tenha ficado aberto de um clique
+        anterior que falhou, pra não confundir o próximo clique.
+        """
+        page.keyboard.press("Escape")
+        with page.expect_download(
+            timeout=report_cfg.get("download_wait_ms", 20000)
+        ) as download_info:
+            page.get_by_role("button", name=f"{tile['name']} - Tile actions").click()
+            page.get_by_text(download_menu_item, exact=True).click()
+            # "Download data" abre um modal (formato do arquivo, já vem CSV
+            # selecionado por padrão) em vez de baixar direto — confirmado
+            # em teste real. Falta confirmar clicando no botão "Download"
+            # do modal.
+            page.get_by_role("button", name="Download", exact=True).click()
+        download = download_info.value
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        dest = (
+            _ARTIFACTS_DIR
+            / f"{report_cfg['name']}_{tile['key']}_{timestamp}"
+            f"{Path(download.suggested_filename).suffix}"
+        )
+        download.save_as(dest)
+        logger.info(
+            "Tile '%s' do relatório Looker '%s' baixado em %s",
+            tile["name"],
+            report_cfg["name"],
+            dest,
+        )
+        return dest
 
     @staticmethod
     def _parse_brl_value(raw: object) -> float:
