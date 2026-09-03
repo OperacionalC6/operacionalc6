@@ -189,9 +189,32 @@ planilha original), `producao_mes` (digitacao_analitico, join por "Cd Contrato")
 media_3m` (painel_visita_mercado, "Financiamento Público Alvo", média móvel real dos últimos 3 meses
 fechados — não o filtro hardcoded 2026/mês>=6 da planilha), `mercado_producao_c6_mes`,
 `mercado_financiamento_total_mes`, `share_mes` (produção C6 / financiamento total do mercado, calculado
-na hora). **Ainda não testado contra produção de verdade** (só validado a extração de CNPJ contra CSV
-real e a importação de config contra o Postgres real) — falta chamar o endpoint e conferir os números
-contra o que a planilha mostra pra alguma área/mês conhecido.
+na hora).
+
+**Testado contra produção (2026-09-03)** — dois bugs reais encontrados e corrigidos:
+1. **`CNPJ Loja` vem como NÚMERO no JSONB** (pandas infere `int64` de uma coluna 100% numérica),
+   não string — comparar contra `StoreRegistryMonthly.cnpj_loja` (sempre string) falhava
+   silenciosamente pra TODO cruzamento de mercado (todo campo `mercado_*`/`share_mes` voltava
+   `None`, sem erro nenhum). Corrigido com `_norm_cnpj()` em `gn_dashboard.py`, aplicado em todo
+   lugar que lê CNPJ de `dimensions`. Documentado como lição geral em `rpa-conventions` item 21
+   (qualquer coluna 100%-numérica do Looker pode ter esse mesmo problema).
+2. **Risco real de perda de dado histórico** (o item 2 do backlog do usuário, "não perder dado"):
+   `run_pipeline()` apagava/reinseria uma janela ÚNICA de 90 dias pra TODA a fonte antes de
+   gravar o lote novo. Relatórios com filtro relativo (a maioria) sempre re-buscam a janela
+   inteira, então tudo bem — mas `painel_visita_mercado` só consegue retornar o MÊS CORRENTE
+   (filtro fixo do Looker, ver `rpa-conventions`). Assim que o calendário virasse de mês, a
+   rodada seguinte apagaria o mês anterior (dentro dos 90 dias) sem re-buscar nada pra
+   substituir — perda permanente, nunca mais recuperável. Ainda não tinha acontecido de verdade
+   (só um mês de histórico existia até agora) mas era um efeito colateral inevitável. Corrigido em
+   `app/services/pipeline.py`: a janela de apagar agora é calculada POR `metric_name`, a partir do
+   [menor, maior] `metric_date` que aquele metric_name efetivamente trouxe NESTA rodada — não do
+   `[date_from, date_to]` pedido. Preserva meses antigos de relatórios "de mês fixo" intactos, sem
+   mudar o comportamento dos relatórios que já retornam a janela inteira todo run.
+
+O fix do CNPJ é só do lado de LEITURA (`gn_dashboard.py` normaliza ao ler `dimensions`) — não precisa
+rodar o pipeline de novo, o dado já ingerido em setembro/2026 deve funcionar direto com o `git pull`.
+Falta apenas confirmar visualmente os números contra o que aparece na planilha pra uma área/mês
+conhecido.
 
 **Bug real na primeira tentativa de carga (2026-09-03)**: `psycopg.errors.NumericValueOutOfRange` em
 `store_registry_monthly.mercado` — a coluna "Mercado" de `db_carterizacao`/`config_carteira` **não é

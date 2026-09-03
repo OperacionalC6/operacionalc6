@@ -171,6 +171,17 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     identificador/chave (contrato, proposta, loja) — essas tendem a virar join key de alguma agregação
     futura, diferente de uma coluna só descritiva.
 
+21. **Uma coluna 100% numérica no CSV/XLSX do Looker (ex.: "CNPJ Loja") vira NÚMERO em
+    `dimensions` (JSONB), não string.** Pandas infere o dtype pela coluna inteira — se todo
+    valor "parece" número, vira `int64`/`float64`, e o dict comprehension de `dimensions` em
+    `_parse_report` guarda o valor bruto (não força string). Isso vira um número no JSON, não
+    texto. Descoberto em 2026-09-03 construindo o serviço `gn_dashboard`: comparar esse valor
+    contra uma chave de cadastro (sempre string, ex. `StoreRegistryMonthly.cnpj_loja`) falha
+    silenciosamente (número ≠ string em Python), sem erro nenhum — só o resultado vem `None`/
+    vazio pra tudo. Sempre que ler um CNPJ (ou qualquer ID que pareça número, tipo código de
+    loja) de dentro de `dimensions`, normalizar pra string antes de comparar — nunca assumir o
+    tipo sem checar contra um export real (`df[col].dtype`).
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por

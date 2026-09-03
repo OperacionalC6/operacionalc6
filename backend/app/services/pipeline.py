@@ -50,25 +50,41 @@ def run_pipeline(
 
         # Sem isso, cada execução do agendador (3x/dia) empilharia os mesmos registros de
         # novo — não existe upsert por linha (dimensions é JSON livre, não dá pra comparar
-        # com segurança). Em vez disso, cada rodada SUBSTITUI a janela inteira: apaga o que
-        # já existia dessa fonte no período antes de inserir o que acabou de buscar. Preserva
-        # dado de fora da janela e de outras fontes; idempotente rodar quantas vezes quiser.
-        deleted = (
-            db.query(Metric)
-            .filter(
-                Metric.source == connector.source_name,
-                Metric.metric_date >= date_from,
-                Metric.metric_date <= date_to,
+        # com segurança). Em vez disso, cada rodada SUBSTITUI a janela que efetivamente
+        # buscou. IMPORTANTE: a janela é calculada POR metric_name a partir do que o lote
+        # atual realmente trouxe — não usamos [date_from, date_to] (o pedido) como janela de
+        # apagar. Descoberto em 2026-09-03, antes de causar perda de dado de verdade: alguns
+        # relatórios (ex.: painel_visita_mercado) só conseguem retornar o mês corrente, por
+        # causa de um filtro fixo do Looker, mesmo com date_from/date_to pedindo 90 dias —
+        # apagar o intervalo pedido inteiro apagaria o mês anterior (que não foi re-buscado
+        # agora) assim que o calendário virasse, perdendo aquele dado pra sempre. Substituir
+        # só [menor, maior] metric_date que cada metric_name trouxe nesta rodada preserva
+        # meses antigos de relatórios "de mês fixo" intactos, e continua substituindo a
+        # janela inteira dos relatórios que já retornam o período completo todo run.
+        janelas_por_metrica: dict[str, tuple[date, date]] = {}
+        for record in raw_records:
+            nome = record["metric_name"]
+            data_registro = record["metric_date"]
+            minimo, maximo = janelas_por_metrica.get(nome, (data_registro, data_registro))
+            janelas_por_metrica[nome] = (min(minimo, data_registro), max(maximo, data_registro))
+
+        deleted = 0
+        for nome, (minimo, maximo) in janelas_por_metrica.items():
+            deleted += (
+                db.query(Metric)
+                .filter(
+                    Metric.source == connector.source_name,
+                    Metric.metric_name == nome,
+                    Metric.metric_date >= minimo,
+                    Metric.metric_date <= maximo,
+                )
+                .delete(synchronize_session=False)
             )
-            .delete(synchronize_session=False)
-        )
         if deleted:
             logger.info(
-                "Removidos %d registros antigos de '%s' no período %s–%s antes de reinserir.",
+                "Removidos %d registros antigos de '%s' (janela calculada por métrica) antes de reinserir.",
                 deleted,
                 connector.source_name,
-                date_from,
-                date_to,
             )
 
         team_cache: dict[str, Team | None] = {}

@@ -58,6 +58,24 @@ def _extract_cnpj(lojista: object) -> str | None:
     return match.group(1) if match else None
 
 
+def _norm_cnpj(value: object) -> str | None:
+    """
+    Normaliza um CNPJ vindo de `dimensions` (JSONB) pra string de dígitos.
+    Descoberto em teste real (2026-09-03): a coluna "CNPJ Loja" do export do
+    Looker é NUMÉRICA (int64 no pandas) — vira número no JSON, não string —
+    então comparar direto contra as chaves de `store_registry_monthly.cnpj_loja`
+    (sempre string) nunca batia e todo cruzamento de mercado ficava `None`
+    silenciosamente. "Lojista" (a outra fonte de CNPJ, via regex) já vem como
+    string, então essa função é um no-op nesse caso — mantida em todo lugar
+    que lê CNPJ de `dimensions` por segurança.
+    """
+    if value is None:
+        return None
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return str(value)
+
+
 def _to_float(value: object) -> float:
     if value is None:
         return 0.0
@@ -169,7 +187,7 @@ def get_area_scorecard(db: Session, area: str, ano: int, mes: int) -> dict:
     mercado_por_cnpj_mes: dict[str, dict[date, dict[str, float]]] = {}
     for metric in mercado_metrics:
         dims = metric.dimensions or {}
-        cnpj = dims.get("CNPJ Loja")
+        cnpj = _norm_cnpj(dims.get("CNPJ Loja"))
         if cnpj not in lojas_por_cnpj:
             continue
         bucket = mercado_por_cnpj_mes.setdefault(cnpj, {}).setdefault(metric.metric_date, {})
