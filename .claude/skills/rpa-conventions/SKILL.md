@@ -204,6 +204,13 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     via `_ABREVIACAO_RE` antes de cair no parsing padrão (`R$ x,xxx.xx`). Se aparecer uma
     abreviação nova (ex.: "bi" pra bilhão), é só adicionar ao dict `_MULTIPLICADOR_POR_SUFIXO`
     — mas confirme o multiplicador contra um valor real antes de assumir (não adivinhar).
+    **Movido pra `app/services/connectors/base.py` como `parse_looker_number()`** (função livre,
+    não mais um staticmethod de `PortalRpaConnector`) — motivo: uma coluna abreviada que fica só
+    como DIMENSÃO (não vira `value`, ex.: "Financiamento Público Alvo" em
+    `painel_visita_mercado`) guarda o texto bruto do Looker igual, e código fora do RPA (ex.:
+    `app/services/gn_dashboard.py`, ao ler essa dimensão pra calcular mercado potencial) precisa
+    do mesmo parsing. Se for ler um valor numérico-como-texto de dentro de `dimensions` em
+    qualquer serviço novo, usar `parse_looker_number`, nunca `float()` direto.
 
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 

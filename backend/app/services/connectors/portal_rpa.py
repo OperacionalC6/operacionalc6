@@ -33,7 +33,6 @@ durante uma requisição HTTP.
 import json
 import logging
 import os
-import re
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -45,7 +44,7 @@ from playwright.sync_api import Page, sync_playwright
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.core.config import get_settings
-from app.services.connectors.base import ConnectorRecord, DataConnector
+from app.services.connectors.base import ConnectorRecord, DataConnector, parse_looker_number
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -354,30 +353,16 @@ class PortalRpaConnector(DataConnector):
         )
         return dest
 
-    # Alguns relatórios (ex.: painel_visita_mercado) abreviam números grandes em vez
-    # de escrever por extenso — descoberto em teste real 2026-09-03: "151.9 mil"
-    # (×1.000), "1.6 MM" (×1.000.000). Ponto como decimal, igual ao resto do locale
-    # do Looker — não confundir com o separador de milhar BR tradicional.
-    _ABREVIACAO_RE = re.compile(r"^(-?[\d.]+)\s*(mil|mm|mi)$", re.IGNORECASE)
-    _MULTIPLICADOR_POR_SUFIXO = {"mil": 1_000, "mm": 1_000_000, "mi": 1_000_000}
-
     @staticmethod
     def _parse_brl_value(raw: object) -> float:
         """
-        Colunas monetárias dos exports Looker vêm formatadas como texto, ex.:
-        'R$ 653,440.00' (vírgula de milhar, ponto decimal — não é o formato
-        BR tradicional, é o locale do Looker). Remove o prefixo e a vírgula
-        antes de converter. Também trata abreviação tipo '151.9 mil'/'1.6 MM'
-        (ver `_ABREVIACAO_RE`).
+        Colunas monetárias/numéricas dos exports Looker vêm formatadas como texto
+        (ex.: 'R$ 653,440.00', ou abreviadas tipo '151.9 mil'/'1.6 MM'). Lógica
+        compartilhada em `parse_looker_number` (base.py) — qualquer leitura
+        posterior de uma coluna que ficou só como dimensão (JSONB), não promovida
+        a `value`, precisa do mesmo parsing (ver `app/services/gn_dashboard.py`).
         """
-        if isinstance(raw, (int, float)):
-            return float(raw)
-        cleaned = str(raw).replace("R$", "").strip()
-        match = PortalRpaConnector._ABREVIACAO_RE.match(cleaned)
-        if match:
-            numero, sufixo = match.groups()
-            return float(numero) * PortalRpaConnector._MULTIPLICADOR_POR_SUFIXO[sufixo.lower()]
-        return float(cleaned.replace(",", ""))
+        return parse_looker_number(raw)
 
     @staticmethod
     def _parse_report(

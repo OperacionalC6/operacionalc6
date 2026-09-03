@@ -43,6 +43,7 @@ from sqlalchemy.orm import Session
 from app.models.metric import Metric
 from app.models.store_commercial_terms import StoreCommercialTerms
 from app.models.store_registry_monthly import StoreRegistryMonthly
+from app.services.connectors.base import parse_looker_number
 
 # Formato real confirmado em export do Looker: "68322 - 07452301000103 - NOME DA LOJA"
 # (Cd Loja - CNPJ 14 dígitos - Nome) — mais robusto que a fórmula original da planilha
@@ -197,7 +198,11 @@ def get_area_scorecard(db: Session, area: str, ano: int, mes: int) -> dict:
             bucket["financiamento_total"] = _to_float(metric.value)
             potencial = dims.get("Financiamento Público Alvo")
             if potencial is not None:
-                bucket["potencial"] = _to_float(potencial)
+                # "Financiamento Público Alvo" ficou só como dimensão (nunca foi
+                # promovida a `value`), então guarda o texto bruto do Looker, que
+                # pode vir abreviado (ex.: "306.2 mil") — mesmo parsing usado no
+                # RPA pra colunas de valor, não o `_to_float` simples daqui.
+                bucket["potencial"] = parse_looker_number(potencial)
 
     lojas_out = []
     for cnpj, loja_cadastro in lojas_por_cnpj.items():
