@@ -153,8 +153,17 @@ def import_store_commercial_terms(db: Session, df: pd.DataFrame) -> int:
 
 
 def import_gn_assignments(db: Session, df: pd.DataFrame) -> int:
-    """`config_GNs`: GN responsável por área, mês a mês."""
+    """`config_GNs`: GN responsável por área, mês a mês.
+
+    A planilha do usuário tem linhas duplicadas de vez em quando (mesma
+    área/ano/mês repetida) — na própria planilha isso é inofensivo porque
+    XLOOKUP sempre pega só a primeira ocorrência. Aqui fazemos o mesmo:
+    ignoramos repetições da mesma chave, mas só quando o GN é o MESMO nas
+    duas linhas — se for diferente, é um conflito real na fonte, não dá pra
+    escolher silenciosamente qual está certo, e a carga para com erro claro.
+    """
     db.query(GnAssignment).delete(synchronize_session=False)
+    seen: dict[tuple[str, int, int], str] = {}
     count = 0
     for _, row in df.iterrows():
         area = _clean_str(row.get("AREA"))
@@ -163,6 +172,18 @@ def import_gn_assignments(db: Session, df: pd.DataFrame) -> int:
         gn_responsavel = _clean_str(row.get("GN_RESPONSAVEL"))
         if not area or ano is None or mes is None or not gn_responsavel:
             continue
+
+        key = (area, ano, mes)
+        previous = seen.get(key)
+        if previous is not None:
+            if previous != gn_responsavel:
+                raise ValueError(
+                    f"config_GNs tem GN conflitante para {area}/{ano}-{mes:02d}: "
+                    f"'{previous}' vs '{gn_responsavel}' — corrija a planilha antes de reimportar."
+                )
+            continue
+
+        seen[key] = gn_responsavel
         db.add(GnAssignment(area=area, ano=ano, mes=mes, gn_responsavel=gn_responsavel))
         count += 1
     return count

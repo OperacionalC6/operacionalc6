@@ -179,6 +179,14 @@ numérico novo, checar o range real dos dados** (`df[col].abs().max()`) em vez d
 uma linha de amostra só — já vi essa mesma linha em 4 das outras colunas da mesma aba, mas era
 coincidência (eram todas 0 nessa loja específica).
 
+**Segundo bug na mesma tentativa**: `UniqueViolation` em `gn_assignments` — a aba `config_GNs` tem 4
+linhas duplicadas de verdade (mesma área/ano/mês repetida 2x, ex. "BELO HORIZONTE 13 - P"/2026/9).
+Na planilha original isso é inofensivo (XLOOKUP sempre pega só a primeira ocorrência), mas a
+constraint `UNIQUE(area, ano, mes)` rejeitava a segunda linha. Corrigido em `import_gn_assignments`:
+ignora repetição da mesma chave só se o GN for IGUAL nas duas linhas (mesmo comportamento do XLOOKUP);
+se o GN for diferente, é conflito real na fonte — a importação para com `ValueError` explícito em vez
+de escolher uma das duas silenciosamente.
+
 **Bug real encontrado ao planejar a Fase 2** (documentado em detalhe em `rpa-conventions` item 20):
 `dimension_columns` de `digitacao_analitico` (relatório `acompanhamento_veiculos`) não tinha
 `Cd Contrato` — a chave que liga cada proposta de veículo ao contrato de comissão em
