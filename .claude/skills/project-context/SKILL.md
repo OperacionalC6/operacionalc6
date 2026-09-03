@@ -75,22 +75,25 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
 - **Proteção contra duplicata/perda de dado** em `run_pipeline()`: cada rodada apaga as métricas já
   existentes daquela fonte na janela de datas antes de inserir as novas — idempotente, não empilha
   registro repetido rodando várias vezes.
-- 486 registros reais gravados em produção (Postgres do Render), confirmados no dashboard.
+- **2268 registros reais gravados em produção** (Postgres do Render) na validação completa dos 6
+  relatórios (ver "Validação completa" abaixo).
 
 **Pendente dentro dos relatórios já mapeados:**
 - `column_mapping` da tile "Qtde por Alçadas" (comissao_avista) — arquivo já baixa certo, só não é
   parseado ainda (ver `portal_selectors.json`).
 - Abas "Digitação" e "Produção" do dashboard `acompanhamento_veiculos` (só "Analítico" mapeada até
   agora).
-- **Validação "testar tudo isso contra produção agora" (em andamento, 2026-09-02/03):** rodando o
-  pipeline manual contra o banco de produção pra validar os 6 relatórios de ponta a ponta. Já
-  confirmados contra o portal real nesse teste: `comissao_avista` (de novo) e `apuracao_parceiro_resumo`
-  (após corrigir 2 nomes de tile — ver `rpa-conventions` item 18) e `acompanhamento_veiculos`. Ainda
-  faltam confirmar `painel_carteira` (parcial), `apuracao_comissao_carteira` e `painel_visita_mercado`
-  contra o portal real — esses dois últimos nunca foram exercitados de verdade, então o mesmo risco de
-  nome de tile divergente (item 18) pode aparecer neles. Nesse teste também foi corrigido um flake
-  intermitente de timeout no download de tile (`rpa-conventions` item 19, retry adicionado em
-  `_download_tile`).
+
+**Validação "testar tudo isso contra produção agora" — CONCLUÍDA (2026-09-02/03):** 🎉
+Pipeline manual rodado de ponta a ponta contra o banco de produção, cobrindo os 6 relatórios
+mapeados (13 tiles). Dois bugs reais corrigidos no processo (aria-label de tile divergente do texto
+visível, ver `rpa-conventions` item 18; flake intermitente de timeout no download, ver item 19 — retry
+adicionado em `_download_tile`). Na rodada final, os 2 relatórios que nunca tinham sido exercitados
+contra o portal real (`apuracao_comissao_carteira`, `painel_visita_mercado`) baixaram sem nenhum
+mismatch de nome de tile. Resultado: **2268 registros ingeridos, zero erros**, substituindo os 486
+registros da ingestão anterior (janela de 90 dias, fonte `portal_rpa`) — confirma que a proteção
+idempotente contra duplicata (apagar+reinserir a janela) está funcionando como esperado mesmo com o
+número de métricas tendo saltado de 9 pra 14.
 
 **Feito (primeira ingestão real em produção, 2026-09-01):** 🎉
 - Rodado manualmente (da máquina do usuário, reaproveitando o perfil de navegador já aprovado, gravando
@@ -113,12 +116,11 @@ Branch de trabalho: `claude/previous-session-recovery-fv67s4`.
   pipeline, agora também no lado de leitura).
 
 **Ainda não iniciado:**
-- Terminar a validação end-to-end contra produção dos 2 relatórios nunca exercitados contra o portal
-  real (`apuracao_comissao_carteira`, `painel_visita_mercado`) — ver item logo acima.
 - `column_mapping` da tile "Qtde por Alçadas" (comissao_avista) — arquivo já baixa certo, só não é
   parseado ainda.
 - **Backlog do usuário (lista literal dele, 2026-09-02), na ordem em que foi dada:**
-  1. Configurar e validar as informações (em andamento — é a validação contra produção citada acima).
+  1. Configurar e validar as informações — **concluído** (validação completa contra produção citada
+     acima, 2268 registros, zero erros).
   2. Checagem/proteção contra dado duplicado ou perdido quando rodar mais de uma vez — **já resolvido**
      (ver "proteção contra duplicata/perda de dado" acima, `run_pipeline()` substitui a janela de datas
      em vez de empilhar).
