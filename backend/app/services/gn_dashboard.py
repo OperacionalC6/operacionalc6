@@ -31,6 +31,16 @@ aqui pra não serem desfeitas sem motivo):
    sentido replicar isso literalmente. Implementamos aqui a versão com
    sentido real (média móvel dos últimos 3 meses fechados antes do período
    pedido). Metas ficam para uma iteração futura, sob demanda.
+
+Os campos `mercado_*_referencia`/`share_mes_referencia` NÃO são necessariamente do
+mês pedido em `mes` — o relatório de mercado (`painel_visita_mercado`) só consegue
+trazer o mês FECHADO mais recente (`{last_closed_month}` no RPA, ver
+rpa-conventions item 22), nunca o mês corrente. Usamos o mês mais recente
+disponível pra loja, devolvido em `mercado_mes_referencia`, em vez de exigir
+correspondência exata com `mes` — do contrário esses campos ficariam sempre
+`None` sempre que alguém pedisse o mês corrente (o caso mais comum de uso).
+`producao_mes`/`qtd_contratos_mes` (comissão/financiamento) não têm esse
+problema — vêm de relatórios com janela relativa, sempre atualizados.
 """
 
 import re
@@ -209,16 +219,24 @@ def get_area_scorecard(db: Session, area: str, ano: int, mes: int) -> dict:
         contratos = contratos_por_cnpj.get(cnpj, [])
         producao_mes = sum(valor_financiado_por_contrato.get(c, 0.0) for c in contratos)
 
+        # O relatório de mercado só consegue trazer o mês FECHADO mais recente
+        # (ver rpa-conventions item 22 — {last_closed_month}), nunca o mês
+        # corrente pedido em `periodo`. Por isso usamos o mês mais recente
+        # disponível pra loja, não uma correspondência exata com `periodo` —
+        # do contrário esses campos ficariam sempre `None` pra qualquer mês
+        # "atual". O mês real é devolvido em `mercado_mes_referencia` pra quem
+        # consome o dado saber que pode ser um mês antes do pedido.
         meses_dado = mercado_por_cnpj_mes.get(cnpj, {})
-        mes_atual = meses_dado.get(periodo, {})
+        mes_referencia = max(meses_dado.keys(), default=None)
+        dado_referencia = meses_dado.get(mes_referencia, {}) if mes_referencia else {}
         potenciais = [m["potencial"] for m in meses_dado.values() if "potencial" in m]
         mercado_potencial_media_3m = sum(potenciais) / len(potenciais) if potenciais else None
 
-        producao_c6_mes = mes_atual.get("producao_c6")
-        financiamento_total_mes = mes_atual.get("financiamento_total")
-        share_mes = (
-            producao_c6_mes / financiamento_total_mes
-            if producao_c6_mes is not None and financiamento_total_mes
+        producao_c6_referencia = dado_referencia.get("producao_c6")
+        financiamento_total_referencia = dado_referencia.get("financiamento_total")
+        share_referencia = (
+            producao_c6_referencia / financiamento_total_referencia
+            if producao_c6_referencia is not None and financiamento_total_referencia
             else None
         )
 
@@ -233,11 +251,14 @@ def get_area_scorecard(db: Session, area: str, ano: int, mes: int) -> dict:
                 "mercado_potencial_media_3m": (
                     round(mercado_potencial_media_3m, 2) if mercado_potencial_media_3m is not None else None
                 ),
-                "mercado_producao_c6_mes": round(producao_c6_mes, 2) if producao_c6_mes is not None else None,
-                "mercado_financiamento_total_mes": (
-                    round(financiamento_total_mes, 2) if financiamento_total_mes is not None else None
+                "mercado_mes_referencia": mes_referencia.isoformat() if mes_referencia else None,
+                "mercado_producao_c6_mes_referencia": (
+                    round(producao_c6_referencia, 2) if producao_c6_referencia is not None else None
                 ),
-                "share_mes": round(share_mes, 4) if share_mes is not None else None,
+                "mercado_financiamento_total_mes_referencia": (
+                    round(financiamento_total_referencia, 2) if financiamento_total_referencia is not None else None
+                ),
+                "share_mes_referencia": round(share_referencia, 4) if share_referencia is not None else None,
             }
         )
 

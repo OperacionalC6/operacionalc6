@@ -213,8 +213,27 @@ na hora).
 
 O fix do CNPJ é só do lado de LEITURA (`gn_dashboard.py` normaliza ao ler `dimensions`) — não precisa
 rodar o pipeline de novo, o dado já ingerido em setembro/2026 deve funcionar direto com o `git pull`.
-Falta apenas confirmar visualmente os números contra o que aparece na planilha pra uma área/mês
-conhecido.
+
+Mais dois bugs reais encontrados testando o endpoint de verdade (mesmo dia):
+3. **`painel_visita_mercado` voltava CSV vazio** pedindo o mês corrente (Looker ainda não tinha
+   calculado esse relatório pros primeiros dias do mês) — corrigido com o placeholder
+   `{last_closed_month}` no RPA (ver `rpa-conventions` item 22). Consequência pro serviço: os
+   campos de mercado NUNCA vão ser do mês exatamente pedido, sempre um mês (ou mais) atrás —
+   `get_area_scorecard` usa o mês mais recente disponível por loja em vez de exigir
+   correspondência exata, devolvendo o mês real em `mercado_mes_referencia`. Campos renomeados
+   de `mercado_producao_c6_mes`/`mercado_financiamento_total_mes`/`share_mes` para
+   `mercado_producao_c6_mes_referencia`/`mercado_financiamento_total_mes_referencia`/
+   `share_mes_referencia` pra deixar isso explícito na API.
+4. **Números abreviados do Looker** (`"151.9 mil"`, `"1.6 MM"`) quebravam o parsing — tanto na
+   coluna de valor quanto numa coluna que ficou só como dimensão (`Financiamento Público Alvo`).
+   Lógica de parsing extraída pra `parse_looker_number()` em `app/services/connectors/base.py`,
+   compartilhada entre o RPA e o `gn_dashboard.py` (ver `rpa-conventions` item 23).
+
+**Confirmado funcionando contra produção de verdade**: `get_area_scorecard(area='CONC BH 5 - P',
+ano=2026, mes=9)` — contratos e produção do mês corretos, mercado potencial (média 3m) e share vindos
+de agosto/2026 (mês de referência real, setembro ainda não fechou). Falta só a validação visual final
+contra a planilha (comparar os números de uma área/mês conhecido lado a lado) antes de partir pra
+Fase 3 — nenhum bug crítico pendente até aqui.
 
 **Bug real na primeira tentativa de carga (2026-09-03)**: `psycopg.errors.NumericValueOutOfRange` em
 `store_registry_monthly.mercado` — a coluna "Mercado" de `db_carterizacao`/`config_carteira` **não é
