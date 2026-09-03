@@ -140,8 +140,8 @@ completo negociado com o usuário, em 3 fases:
    futuras — ver abaixo.
 2. **Fase 2 (feita)**: serviço que recalcula o equivalente de `base_final` por área/ano/mês — ver
    abaixo.
-3. **Fase 3 (a fazer)**: tela `DashAreaGN` no frontend (seletor de área/ano/mês, lojas com produção
-   real vs mercado/potencial).
+3. **Fase 3 (implementada, falta validação visual do usuário)**: tela `DashAreaGN` no frontend
+   (seletor de área/ano/mês, lojas com produção real vs mercado/potencial) — ver abaixo.
 
 Decisões já tomadas com o usuário (não redecidir):
 - Tabelas de config mantidas via **upload de CSV/XLSX** por enquanto (não telas de admin) — usuário
@@ -240,6 +240,19 @@ tem atraso. Confirmado com dado real: loja WAMBERG tinha 2 propostas PAGAS em se
 confirmada com o usuário: manter `comissao_avista`** como fonte (mesmo critério da planilha
 original) — não trocar para `digitacao_analitico` sem pedido explícito. Documentado em detalhe no
 docstring de `gn_dashboard.py`.
+
+**Fase 3 implementada (2026-09-03)**: rota `frontend/src/app/dashboard/gn/page.tsx` — seletor de
+área/mês/ano, cards de resumo (lojas na área, com contrato no mês, produção total) e tabela por loja
+(contratos, produção, mercado potencial média 3m, share — com o mês de referência real do dado de
+mercado exibido no cabeçalho da coluna quando difere do mês pedido). Consome
+`fetchGnAreas`/`fetchGnAreaScorecard` (`frontend/src/lib/api.ts`), tipos em `frontend/src/lib/types.ts`.
+Link recíproco entre `/dashboard` e `/dashboard/gn`. `next build` e `eslint` limpos — a regra nova
+`react-hooks/set-state-in-effect` (vem por padrão no Next 16) foi suprimida de propósito nos dois
+efeitos de fetch-on-param-change (mesmo padrão do exemplo oficial de "fetching data" do react.dev,
+mais rígida que essa recomendação; justificativa no topo do arquivo). **Ainda não testado num
+navegador de verdade** — login exige Google OAuth real, sem acesso a partir do ambiente de
+desenvolvimento; falta o usuário abrir `/dashboard/gn` depois do deploy no Vercel e confirmar
+visualmente.
 
 **Bug real na primeira tentativa de carga (2026-09-03)**: `psycopg.errors.NumericValueOutOfRange` em
 `store_registry_monthly.mercado` — a coluna "Mercado" de `db_carterizacao`/`config_carteira` **não é
