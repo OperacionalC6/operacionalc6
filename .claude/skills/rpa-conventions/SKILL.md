@@ -159,6 +159,18 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     a segunda tentativa, aí sim revisitar a suspeita do item 12 (esperar um seletor de "tile carregou" por
     tile, não só a primeira).
 
+20. **`dimension_columns` "enxuto demais" pode esconder a chave de junção que outro dado vai precisar
+    depois.** Descoberto em 2026-09-03, ao planejar `base_final` (comissão de GN — ver skill
+    `project-context`): tirei "Cd Contrato" de `digitacao_analitico` (relatório
+    `acompanhamento_veiculos`) sem perceber que essa coluna era exatamente a chave que a planilha do
+    usuário usa pra ligar cada proposta de veículo ao contrato de comissão correspondente em
+    `comissao_avista`. Não era PII (só CPF/nome/telefone/placa/chassi foram excluídos de propósito, ver
+    item da nota `_pii_nota`) — foi simplesmente não antecipar o uso futuro. Adicionado de volta
+    (`Cd Contrato`, mais `ID Proposta`/`Cd Contrato Inter` por rastreabilidade). Lição: antes de excluir
+    uma coluna não-PII de `dimension_columns` por "não parece necessária agora", verificar se ela é
+    identificador/chave (contrato, proposta, loja) — essas tendem a virar join key de alguma agregação
+    futura, diferente de uma coluna só descritiva.
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por

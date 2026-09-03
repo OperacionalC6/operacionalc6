@@ -228,12 +228,13 @@
               "_origem": "Extraído do XLSX real baixado em 2026-09-02 (500 linhas, uma por proposta).",
               "_natureza_nota": "Diferente dos outros relatórios: aqui `metric_date` é a data REAL da proposta (coluna 'Dt Relatório', já datetime — sem date_format), não o mês de uma apuração fechada. Cada linha é uma proposta individual, não uma agregação.",
               "_pii_nota": "Colunas de dado pessoal do cliente final (Cpf, Nm Cliente, Telefone Comercial, Nr Placa, Nr Chassi) DELIBERADAMENTE fora de dimension_columns — não há necessidade identificada de guardar isso pra métricas agregadas. Reavaliar só se houver necessidade real de rastreabilidade por cliente.",
+              "_join_nota": "'Cd Contrato' adicionado em 2026-09-03 (não é PII, é a chave usada pelo cálculo de base_final/comissão de GN pra ligar esta proposta ao contrato correspondente em 'comissao_avista' — sem ela não dava pra fazer esse cruzamento). 'ID Proposta'/'Cd Contrato Inter' também incluídos por rastreabilidade.",
               "date_column": "Dt Relatório",
               "date_format": null,
               "value_column": "Vl Financiamento",
               "metric_name": "digitacao_analitico",
               "team_column": null,
-              "dimension_columns": ["Lojista", "GP", "GN", "Status Proposta", "Nm Fase", "Ds Marca", "Ds Modelo", "Tipo Cupom", "Filial", "Usuario", "Idade do Veículo", "Vl Solicitado", "Vl Principal", "(R$) Seguro Prestamista", "(R$) Seguro AP"]
+              "dimension_columns": ["ID Proposta", "Cd Contrato", "Cd Contrato Inter", "Lojista", "GP", "GN", "Status Proposta", "Nm Fase", "Ds Marca", "Ds Modelo", "Tipo Cupom", "Filial", "Usuario", "Idade do Veículo", "Vl Solicitado", "Vl Principal", "(R$) Seguro Prestamista", "(R$) Seguro AP"]
             }
           }
         ]

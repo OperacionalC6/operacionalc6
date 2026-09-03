@@ -128,6 +128,52 @@ número de métricas tendo saltado de 9 pra 14.
      bruta — não iniciado).
   4. Mapear os demais relatórios importantes que ainda não baixamos — 6 novos já mapeados nesta sessão;
      seguir mapeando outros cards do hub "One Page - Auto" fora da aba "Auto" se o usuário pedir mais.
+
+**Dashboard de comissão de GN (`base_final`) — EM ANDAMENTO (2026-09-03):**
+Item 3 do backlog acima. O usuário mantém hoje toda a operação numa planilha ("Construcao.xlsx")
+com abas `db_*` (algumas já vêm do Looker — já cobertas pelo RPA; outras são cadastro manual) e
+`config_*` (tabelas de referência mantidas na mão). A aba `base_final` é o motor de cálculo: uma
+linha por contrato, cruzando o dado do Looker com os cadastros pra calcular a **comissão interna do
+GN** (Gerente de Negócios — diferente da comissão que o C6 paga pra EHS, que já rastreamos). Plano
+completo negociado com o usuário, em 3 fases:
+1. **Fase 1 (feita)**: tabelas de cadastro/config no Postgres + endpoint de upload pra atualizações
+   futuras — ver abaixo.
+2. **Fase 2 (a fazer)**: serviço que recalcula `base_final` (join de `metrics` já ingeridas + tabelas
+   de cadastro) por período, exposto via API.
+3. **Fase 3 (a fazer)**: tela `DashAreaGN` no frontend (seletor de área/ano/mês, lojas com meta vs
+   realizado).
+
+Decisões já tomadas com o usuário (não redecidir):
+- Tabelas de config mantidas via **upload de CSV/XLSX** por enquanto (não telas de admin) — usuário
+  escolheu "começar com upload, migrar depois".
+- Aba `db_Acordos` (metas de % Acordo por loja) **fora de escopo por enquanto** — não é Looker nem
+  cadastro já modelado; deixada de fora até o usuário pedir.
+- `config_carteira` (identidade comercial da loja por CNPJ) e `db_carterizacao` (histórico de
+  área/GN por mês) são cadastros DIFERENTES, confirmado pelo usuário — não são duplicata.
+
+**Fase 1 implementada:** 6 tabelas novas (`app/models/`): `store_registry_monthly` (db_carterizacao),
+`store_commercial_terms` (config_carteira), `gn_assignments` (config_GNs), `commission_rate_tiers`
+(config_remuneracao), `alcada_discount_rules` (config_regras_alcada), `contract_overrides`
+(config_AjustesContrato — só as 2 colunas de entrada manual real, o resto da aba original são
+fórmulas derivadas). Migration `0002_config_tables`. Lógica de importação em
+`app/services/config_import.py` (substitui a tabela inteira a cada carga, mesmo padrão idempotente
+do pipeline de métricas). Endpoints em `app/api/routes/config_data.py`
+(`GET /config-data/status`, `POST /config-data/{table}/upload`, admin-only, audit-logado).
+
+**Carga inicial pendente de rodar contra produção**: `app/seed_config.py`, testado localmente contra
+o `Construcao.xlsx` real do usuário (todas as ~5100 linhas das 6 abas importadas sem descarte) mas
+**ainda não rodado contra o Postgres de produção** — falta o usuário (ou eu, quando tiver a env var)
+rodar `python -m app.seed_config /caminho/para/Construcao.xlsx` localmente (mesmo padrão de rodar o
+pipeline manual), depois que o deploy do Render aplicar a migration `0002_config_tables`.
+
+**Bug real encontrado ao planejar a Fase 2** (documentado em detalhe em `rpa-conventions` item 20):
+`dimension_columns` de `digitacao_analitico` (relatório `acompanhamento_veiculos`) não tinha
+`Cd Contrato` — a chave que liga cada proposta de veículo ao contrato de comissão em
+`comissao_avista`, essencial pro join de `base_final`. Corrigido em `portal_selectors.json`
+(adicionado `Cd Contrato`, `ID Proposta`, `Cd Contrato Inter`). **Requer rodar o pipeline manual de
+novo** pra esse campo aparecer nas métricas já ingeridas (os 2268 registros atuais não têm essa
+dimensão ainda).
+
 - ~~Configurar o robô pra rodar sozinho DENTRO do Render~~ — **tentado e descartado em 2026-09-01**:
   o Cloudflare do C6 bloqueia ativamente a conexão vinda do datacenter do Render (Oregon/EUA) —
   `"Sorry, you have been blocked"`, confirmado por print de falha real. Não é bug de código, é defesa
