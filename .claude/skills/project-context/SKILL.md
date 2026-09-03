@@ -229,11 +229,17 @@ Mais dois bugs reais encontrados testando o endpoint de verdade (mesmo dia):
    Lógica de parsing extraída pra `parse_looker_number()` em `app/services/connectors/base.py`,
    compartilhada entre o RPA e o `gn_dashboard.py` (ver `rpa-conventions` item 23).
 
-**Confirmado funcionando contra produção de verdade**: `get_area_scorecard(area='CONC BH 5 - P',
-ano=2026, mes=9)` — contratos e produção do mês corretos, mercado potencial (média 3m) e share vindos
-de agosto/2026 (mês de referência real, setembro ainda não fechou). Falta só a validação visual final
-contra a planilha (comparar os números de uma área/mês conhecido lado a lado) antes de partir pra
-Fase 3 — nenhum bug crítico pendente até aqui.
+**VALIDADO pelo usuário contra produção (2026-09-03)** 🎉: `get_area_scorecard(area='CONC BH 5 - P',
+ano=2026, mes=9)` — usuário conferiu os números de mercado e confirmaram "correto". Fase 2 completa.
+
+Uma característica dos dados (não bug) descoberta nessa validação: **`qtd_contratos_mes`/
+`producao_mes` refletem contrato com comissão JÁ APURADA pelo C6** (fonte `comissao_avista`), não
+"toda proposta paga no mês" — durante o mês corrente sempre vem sub-representado, porque a apuração
+tem atraso. Confirmado com dado real: loja WAMBERG tinha 2 propostas PAGAS em setembro
+(`digitacao_analitico`, quase em tempo real) mas só 1 já apurada em `comissao_avista`. **Decisão
+confirmada com o usuário: manter `comissao_avista`** como fonte (mesmo critério da planilha
+original) — não trocar para `digitacao_analitico` sem pedido explícito. Documentado em detalhe no
+docstring de `gn_dashboard.py`.
 
 **Bug real na primeira tentativa de carga (2026-09-03)**: `psycopg.errors.NumericValueOutOfRange` em
 `store_registry_monthly.mercado` — a coluna "Mercado" de `db_carterizacao`/`config_carteira` **não é

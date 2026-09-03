@@ -39,8 +39,20 @@ rpa-conventions item 22), nunca o mês corrente. Usamos o mês mais recente
 disponível pra loja, devolvido em `mercado_mes_referencia`, em vez de exigir
 correspondência exata com `mes` — do contrário esses campos ficariam sempre
 `None` sempre que alguém pedisse o mês corrente (o caso mais comum de uso).
-`producao_mes`/`qtd_contratos_mes` (comissão/financiamento) não têm esse
-problema — vêm de relatórios com janela relativa, sempre atualizados.
+
+`qtd_contratos_mes`/`producao_mes` vêm de `comissao_avista`, que sofre de um
+atraso DIFERENTE (não é filtro de mês fixo, esses relatórios têm janela
+relativa e sempre buscam o período completo): um contrato só aparece aí depois
+que o C6 APURA a comissão dele, não assim que a proposta é paga. Confirmado em
+teste real (2026-09-03): a loja WAMBERG tinha 2 propostas PAGAS em setembro
+(`digitacao_analitico`, dado quase em tempo real), mas só 1 já tinha entrado em
+`comissao_avista` — a segunda ainda não tinha sido apurada. Decisão confirmada
+com o usuário: manter `comissao_avista` como fonte (mesmo critério da planilha
+original — comissão apurada, não proposta paga), aceitando que o mês corrente
+sempre vem sub-representado até a apuração fechar. Trocar pra
+`digitacao_analitico` foi considerado e descartado (diverge do critério
+original e conta contrato que ainda pode ser cancelado antes de virar comissão
+de verdade).
 """
 
 import re
