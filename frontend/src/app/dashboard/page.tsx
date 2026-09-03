@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ApiError, fetchMe, fetchMetrics } from "@/lib/api";
 import { clearTokens, isLoggedIn } from "@/lib/auth";
@@ -64,12 +65,17 @@ export default function DashboardPage() {
             </p>
           )}
         </div>
-        <button
-          onClick={handleLogout}
-          className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100"
-        >
-          Sair
-        </button>
+        <div className="flex items-center gap-4">
+          <Link href="/dashboard/gn" className="text-sm text-zinc-600 hover:text-zinc-900">
+            Comissão de GN →
+          </Link>
+          <button
+            onClick={handleLogout}
+            className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100"
+          >
+            Sair
+          </button>
+        </div>
       </header>
 
       <main className="flex-1 px-6 py-8">

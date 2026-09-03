@@ -21,3 +21,24 @@ export interface Metric {
   source: string;
   created_at: string;
 }
+
+export interface GnScorecardLoja {
+  cnpj_loja: string;
+  nome_loja: string | null;
+  filial: string | null;
+  loja_nova: boolean;
+  qtd_contratos_mes: number;
+  producao_mes: number;
+  mercado_potencial_media_3m: number | null;
+  mercado_mes_referencia: string | null;
+  mercado_producao_c6_mes_referencia: number | null;
+  mercado_financiamento_total_mes_referencia: number | null;
+  share_mes_referencia: number | null;
+}
+
+export interface GnAreaScorecard {
+  area: string;
+  ano: number;
+  mes: number;
+  lojas: GnScorecardLoja[];
+}
