@@ -161,10 +161,23 @@ do pipeline de métricas). Endpoints em `app/api/routes/config_data.py`
 (`GET /config-data/status`, `POST /config-data/{table}/upload`, admin-only, audit-logado).
 
 **Carga inicial pendente de rodar contra produção**: `app/seed_config.py`, testado localmente contra
-o `Construcao.xlsx` real do usuário (todas as ~5100 linhas das 6 abas importadas sem descarte) mas
-**ainda não rodado contra o Postgres de produção** — falta o usuário (ou eu, quando tiver a env var)
-rodar `python -m app.seed_config /caminho/para/Construcao.xlsx` localmente (mesmo padrão de rodar o
-pipeline manual), depois que o deploy do Render aplicar a migration `0002_config_tables`.
+o `Construcao.xlsx` real do usuário (todas as ~5100 linhas das 6 abas importadas sem descarte no nível
+Python/pandas) mas **ainda não concluído contra o Postgres de produção** — falta o usuário (ou eu,
+quando tiver a env var) rodar `python -m app.seed_config /caminho/para/Construcao.xlsx` localmente
+(mesmo padrão de rodar o pipeline manual), depois que a migration mais recente for aplicada
+(`alembic upgrade head`).
+
+**Bug real na primeira tentativa de carga (2026-09-03)**: `psycopg.errors.NumericValueOutOfRange` em
+`store_registry_monthly.mercado` — a coluna "Mercado" de `db_carterizacao`/`config_carteira` **não é
+percentual** (só assumi isso porque a primeira linha de amostra que olhei tinha 0/vazio, igual
+Retorno/Acordo/Comissão Seguros, que ESSES sim são percentuais ≤6%) — é potencial de mercado em R$,
+com valores reais de até R$ 40 milhões numa loja. `Numeric(9,6)` estourava. Corrigido pra
+`Numeric(18,2)` (mesma precisão de `Metric.value`) em `store_registry_monthly.py` e
+`store_commercial_terms.py`, com migration nova `0003_fix_mercado_precision` (a `0002` já tinha rodado
+em produção, não dava mais pra editar ela direto). Lição: **antes de fixar a precisão de um campo
+numérico novo, checar o range real dos dados** (`df[col].abs().max()`) em vez de inferir pelo valor de
+uma linha de amostra só — já vi essa mesma linha em 4 das outras colunas da mesma aba, mas era
+coincidência (eram todas 0 nessa loja específica).
 
 **Bug real encontrado ao planejar a Fase 2** (documentado em detalhe em `rpa-conventions` item 20):
 `dimension_columns` de `digitacao_analitico` (relatório `acompanhamento_veiculos`) não tinha

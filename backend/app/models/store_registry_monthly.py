@@ -45,7 +45,9 @@ class StoreRegistryMonthly(Base):
     classificacao: Mapped[str | None] = mapped_column(String(60), nullable=True)
     shopping: Mapped[str | None] = mapped_column(String(10), nullable=True)
     concessionaria: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    mercado: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
+    # Mercado é potencial de mercado em R$ (não percentual, ao contrário dos 3 campos
+    # abaixo) — chegou a estourar Numeric(9,6) com valor real de R$ 40 milhões numa loja.
+    mercado: Mapped[float | None] = mapped_column(Numeric(18, 2), nullable=True)
     retorno: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
     acordo: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
     comissao_seguros: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)

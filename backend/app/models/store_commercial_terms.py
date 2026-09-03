@@ -41,7 +41,9 @@ class StoreCommercialTerms(Base):
     filial: Mapped[str | None] = mapped_column(String(120), nullable=True)
     regional: Mapped[str | None] = mapped_column(String(60), nullable=True)
     rede: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    mercado: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
+    # Mercado é potencial de mercado em R$ (não percentual, ao contrário dos 3 campos
+    # abaixo) — chegou a estourar Numeric(9,6) com valor real de R$ 3,3 milhões numa loja.
+    mercado: Mapped[float | None] = mapped_column(Numeric(18, 2), nullable=True)
     retorno: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
     acordo: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
     comissao_seguros: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
