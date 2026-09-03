@@ -129,7 +129,8 @@
         "tiles": [
           {
             "key": "emissao_nota_fiscal",
-            "name": "Emissão Nota Fiscal",
+            "name": "Resumo - Valores Emissão NF",
+            "_nome_nota": "O aria-label real do botão 'Tile actions' NÃO é o texto da barra preta visível ('Emissão Nota Fiscal') — é esse nome interno, confirmado no HTML de falha em 2026-09-02. Ver rpa-conventions item 18.",
             "column_mapping": {
               "_origem": "Extraído do XLSX real baixado em 2026-09-01. Diferente do CSV: números já vêm limpos (float/int nativos, sem 'R$'/vírgula de milhar) — _parse_brl_value já trata isso (aceita int/float direto, só faz replace de texto se vier string).",
               "_metric_name_nota": "Só extrai a coluna Líquida (após IR/ISS/PCC) — a Bruta dessa tile é idêntica, linha a linha, ao TOTAL Bruto calculado na tile 'Comissão Total' (mesmo dashboard). Gravar as duas duplicaria o mesmo valor.",
@@ -143,7 +144,8 @@
           },
           {
             "key": "comissao_total",
-            "name": "Comissão Total",
+            "name": "Resumo - Detalhamento Valores",
+            "_nome_nota": "Aria-label real, diferente do texto visível 'Comissão Total' — ver rpa-conventions item 18.",
             "column_mapping": [
               {
                 "_origem": "Extraído do XLSX real baixado em 2026-09-01.",
@@ -159,7 +161,8 @@
           },
           {
             "key": "bloco_metas",
-            "name": "Bloco de Metas",
+            "name": "Resumo - Bloco de Metas",
+            "_nome_nota": "Aria-label real, diferente do texto visível 'Bloco de Metas' — ver rpa-conventions item 18.",
             "column_mapping": [
               {
                 "_origem": "Extraído do XLSX real baixado em 2026-09-01. Métrica NOVA: volume de produção (não é comissão, é o valor total financiado/produzido).",
@@ -183,7 +186,8 @@
           },
           {
             "key": "bloco_metas_por_filial",
-            "name": "Bloco de Metas - Por Filial",
+            "name": "Resumo - Bloco de Metas por Filial",
+            "_nome_nota": "Aria-label real, diferente do texto visível 'Bloco de Metas - Por Filial' — ver rpa-conventions item 18.",
             "column_mapping": [
               {
                 "_origem": "Extraído do XLSX real baixado em 2026-09-01.",

@@ -133,6 +133,18 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     rollup, não dado novo (validamos isso rodando o parser contra os arquivos reais antes de gravar no
     banco, não adivinhando).
 
+18. **`TimeoutError` esperando `get_by_role("button", name="{X} - Tile actions")`, mesmo com a tela
+    carregada certinho (confirmado pelo print de falha).** O nome do botão "Tile actions" (usado no
+    `tiles[].name` de `portal_selectors.json`) é o **título interno da tile no Looker**, que pode ser
+    DIFERENTE do texto que aparece na barra preta visível na tela. Descoberto em 2026-09-02 (relatório
+    `apuracao_parceiro_resumo`): a barra dizia "Emissão Nota Fiscal", mas o aria-label real era
+    "Resumo - Valores Emissão NF". Dica prática: o nome real costuma bater com o nome do arquivo que o
+    Looker sugere quando você clica "Download data" manualmente (troca `_` por espaço) — mas a forma
+    confiável de confirmar é abrir o `failure_<timestamp>.html` salvo automaticamente e rodar
+    `grep -o 'aria-label="[^"]*Tile actions[^"]*"'` nele; mostra o nome exato de toda tile da página.
+    Corrigido assumindo que o robô SEMPRE vai bater nesse erro na primeira vez que visita um dashboard
+    novo — não dá pra confiar no texto da barra preta sem confirmar contra o HTML real.
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por
