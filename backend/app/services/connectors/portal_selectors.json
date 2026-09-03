@@ -248,7 +248,8 @@
         "tiles": [
           {
             "key": "carteira",
-            "name": "Carteira",
+            "name": "Analitico",
+            "_nome_nota": "Aria-label real confirmado no HTML de falha em 2026-09-02: 'Analitico' (sem acento), não 'Carteira' como o texto visível/nome do card sugeria — ver rpa-conventions item 18.",
             "column_mapping": {
               "_origem": "Extraído do XLSX real baixado em 2026-09-02 (4002 linhas — uma por loja/mês, histórico de vários meses de 2026 por loja).",
               "_natureza_nota": "Não é um relatório de comissão/produção — é o cadastro/hierarquia comercial das lojas da carteira, com o potencial de mercado ('Mercado') estimado mês a mês por loja. Útil pra enriquecer outras métricas (ex.: cruzar 'Filial' com Cidade/Rede/Regional) e pra identificar lojas com potencial não explorado.",
