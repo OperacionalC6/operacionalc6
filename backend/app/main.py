@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import audit, auth, config_data, metrics, pipeline, teams, users
+from app.api.routes import audit, auth, config_data, gn_dashboard, metrics, pipeline, teams, users
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.services.scheduler import start_scheduler, stop_scheduler
@@ -53,6 +53,7 @@ app.include_router(metrics.router)
 app.include_router(audit.router)
 app.include_router(pipeline.router)
 app.include_router(config_data.router)
+app.include_router(gn_dashboard.router)
 
 
 @app.get("/health")

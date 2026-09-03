@@ -138,10 +138,10 @@ GN** (Gerente de Negócios — diferente da comissão que o C6 paga pra EHS, que
 completo negociado com o usuário, em 3 fases:
 1. **Fase 1 (feita)**: tabelas de cadastro/config no Postgres + endpoint de upload pra atualizações
    futuras — ver abaixo.
-2. **Fase 2 (a fazer)**: serviço que recalcula `base_final` (join de `metrics` já ingeridas + tabelas
-   de cadastro) por período, exposto via API.
-3. **Fase 3 (a fazer)**: tela `DashAreaGN` no frontend (seletor de área/ano/mês, lojas com meta vs
-   realizado).
+2. **Fase 2 (feita)**: serviço que recalcula o equivalente de `base_final` por área/ano/mês — ver
+   abaixo.
+3. **Fase 3 (a fazer)**: tela `DashAreaGN` no frontend (seletor de área/ano/mês, lojas com produção
+   real vs mercado/potencial).
 
 Decisões já tomadas com o usuário (não redecidir):
 - Tabelas de config mantidas via **upload de CSV/XLSX** por enquanto (não telas de admin) — usuário
@@ -166,6 +166,32 @@ sucesso contra o Postgres de produção — 4005 `store_registry_monthly`, 522 `
 Dois bugs reais encontrados e corrigidos nas duas primeiras tentativas (ver abaixo) — nenhum na
 terceira. Fase 1 completa. Reimportar no futuro: `python -m app.seed_config /caminho/para/Construcao.xlsx`
 (substitui cada tabela por inteiro) ou `POST /config-data/{table}/upload`.
+
+**Fase 2 implementada (2026-09-03):** `app/services/gn_dashboard.py` (`get_area_scorecard`,
+`list_areas`), exposto em `app/api/routes/gn_dashboard.py`
+(`GET /gn-dashboard/areas?ano=&mes=`, `GET /gn-dashboard/area-scorecard?area=&ano=&mes=`,
+qualquer usuário autenticado). Antes de escrever o código, reli as fórmulas do `base_final` DIRETO da
+planilha (não de memória) pra não embutir um mapeamento errado — descobri que os indicadores que o
+`DashAreaGN` realmente usa (contratos, produção, mercado, share) dependem de MENOS coisa do que
+parecia: nenhum RPA novo foi necessário, só o fix do "Cd Contrato" já feito antes. Duas decisões
+deliberadas em relação à planilha original, ambas documentadas em detalhe no docstring do módulo
+(não redecidir sem reler):
+1. Área da loja = `StoreRegistryMonthly.carterizacao_ehs` direto (confirmado com o usuário) — a
+   coluna `AREA_LOJA_EHS` do `base_final` original tem uma inconsistência real de fórmula (parece
+   copy-paste da fórmula vizinha `AREA_LOJA_C6` sem ajustar o valor primário).
+2. Metas (META QTD CONTRATO, META SHARE, PRODUÇÃO META POTENCIAL) ficaram de fora desta primeira
+   versão — fórmulas originais ambíguas/com filtro de ano hardcoded (usuário concordou, escopo é só
+   "números de negócio": contratos, produção, mercado potencial, share).
+
+Indicadores implementados por loja: `qtd_contratos_mes` (comissao_avista, CNPJ extraído do campo
+"Lojista" via regex — testado contra dado real, mais robusto que o `RIGHT(LEFT(...))` posicional da
+planilha original), `producao_mes` (digitacao_analitico, join por "Cd Contrato"), `mercado_potencial_
+media_3m` (painel_visita_mercado, "Financiamento Público Alvo", média móvel real dos últimos 3 meses
+fechados — não o filtro hardcoded 2026/mês>=6 da planilha), `mercado_producao_c6_mes`,
+`mercado_financiamento_total_mes`, `share_mes` (produção C6 / financiamento total do mercado, calculado
+na hora). **Ainda não testado contra produção de verdade** (só validado a extração de CNPJ contra CSV
+real e a importação de config contra o Postgres real) — falta chamar o endpoint e conferir os números
+contra o que a planilha mostra pra alguma área/mês conhecido.
 
 **Bug real na primeira tentativa de carga (2026-09-03)**: `psycopg.errors.NumericValueOutOfRange` em
 `store_registry_monthly.mercado` — a coluna "Mercado" de `db_carterizacao`/`config_carteira` **não é
