@@ -352,11 +352,13 @@ depois abrir a tela pra validar visualmente contra o Excel.
       aparecia no dashboard antes do fix — pode não ter sido re-conferido de forma independente).
       Sinalizado ao usuário pra confirmar esse campo específico, não assumido como bug adicional
       sem evidência.
-   **Pendente**: esses dois fixes mudam `base_final.py` (lógica da API), não dado — precisam de
-   DEPLOY do backend no Render (branch atual não é necessariamente a que o Render acompanha; as
-   cargas históricas via `seed_*.py` rodaram direto contra o Postgres de produção pelo usuário,
-   sem passar pelo deploy do serviço web). Confirmar com o usuário qual é o fluxo de deploy antes
-   de assumir que o fix já está no ar.
+   **Confirmado pelo usuário (2026-09-04): o Render faz deploy automático a partir da branch
+   `claude/previous-session-recovery-fv67s4`** (a branch de trabalho atual) — os dois fixes acima
+   (commit `67a39aa`) entram em produção sozinhos depois do push, sem precisar de merge pra
+   `main`/PR. Pendente: usuário confirmar visualmente em `/dashboard/base-final` (Ago/26) que
+   Código Loja/Nome Loja/Grupo Loja/Cidade e os totais de Vl Financiamento/Vl Seguro AP baixados
+   já refletem o fix, e checar de forma independente o campo `Vl Seguro Prestamista` (ver
+   discrepância não resolvida acima).
 
 **Bug real na primeira tentativa de carga (2026-09-03)**: `psycopg.errors.NumericValueOutOfRange` em
 `store_registry_monthly.mercado` — a coluna "Mercado" de `db_carterizacao`/`config_carteira` **não é
