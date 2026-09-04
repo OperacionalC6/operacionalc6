@@ -109,7 +109,22 @@ def get_base_final_rows(db: Session, ano: int, mes: int) -> list[dict]:
 
     # 2) Financiamento/data real da proposta (digitacao_analitico), casado por
     #    Cd Contrato — janela ampla porque a proposta pode ser anterior à
-    #    apuração da comissão.
+    #    apuração da comissão. Uma mesma proposta aparece VÁRIAS vezes em
+    #    `digitacao_analitico` conforme avança de fase (ex.: "PROPOSTA
+    #    APROVADA" -> "PROPOSTA PAGA", às vezes com Vl Financiamento levemente
+    #    diferente entre as fases) — a fórmula original usa
+    #    `XLOOKUP(Cd Contrato, ...)` SEM 6º argumento (search_mode), que
+    #    default pra 1 = primeira ocorrência de cima pra baixo na planilha.
+    #    Como `db_pagasanalitico` vem sempre em ordem cronológica ascendente
+    #    (conferido linha a linha contra a planilha real do usuário, nenhuma
+    #    data fora de ordem), "primeira ocorrência na planilha" equivale a
+    #    "primeira proposta cronologicamente" — por isso ordena por
+    #    (metric_date, created_at) ASC e mantém só a primeira vez que vê cada
+    #    Cd Contrato. Pegar a ÚLTIMA (mais recente) em vez disso foi o bug real
+    #    encontrado em produção 2026-09-04: batia por coincidência num dos 3
+    #    campos checados pelo usuário mas divergia nos outros dois (ex.:
+    #    Ago/26, Vl Financiamento saía R$ 22.464.978,49 em vez dos
+    #    R$ 22.442.646,18 corretos).
     janela_inicio = periodo - relativedelta(months=6)
     janela_fim = periodo + relativedelta(months=1)
     propostas = (
@@ -119,24 +134,32 @@ def get_base_final_rows(db: Session, ano: int, mes: int) -> list[dict]:
             Metric.metric_date >= janela_inicio,
             Metric.metric_date <= janela_fim,
         )
+        .order_by(Metric.metric_date.asc(), Metric.created_at.asc())
         .all()
     )
     propostas_por_contrato: dict[str, Metric] = {}
     for p in propostas:
         cd = (p.dimensions or {}).get("Cd Contrato")
         if cd and str(cd) in codigos_contrato:
-            propostas_por_contrato[str(cd)] = p
+            propostas_por_contrato.setdefault(str(cd), p)
 
-    # 3) Cadastro de loja (Fase 1) — termos comerciais (config_carteira) pela
-    #    última versão conhecida até o período, e carterização (área/GN) pelo
-    #    mês exato.
+    # 3) Cadastro de loja (Fase 1) — termos comerciais (config_carteira), última
+    #    versão conhecida por CNPJ, e carterização (área/GN) pelo mês exato.
+    #
+    #    NÃO filtra por `anomes <= período` (uma "modernização" tentada e
+    #    revertida em 2026-09-04, ver histórico do modelo StoreCommercialTerms):
+    #    a aba `config_carteira` de origem não é uma série mensal de verdade —
+    #    é um cadastro de "estado atual conhecido" (487 de 522 linhas têm
+    #    ANOMES do mês corrente, poucas linhas mais antigas nunca foram
+    #    re-tocadas). Filtrar por período eliminava a ÚNICA linha de quase toda
+    #    loja pra qualquer mês anterior ao atual, zerando Código Loja/Nome
+    #    Loja/Grupo Loja/Cidade pra praticamente toda a base_final histórica
+    #    (achado em produção: Ago/26 tinha 0 de 505 contratos com essas
+    #    colunas preenchidas). Usa sempre o cadastro mais recente conhecido,
+    #    igual ao XLOOKUP simples da planilha original (que também ignora
+    #    período nessa aba).
     termos_por_cnpj: dict[str, StoreCommercialTerms] = {}
-    for termo in (
-        db.query(StoreCommercialTerms)
-        .filter(StoreCommercialTerms.anomes <= anomes)
-        .order_by(StoreCommercialTerms.anomes.asc())
-        .all()
-    ):
+    for termo in db.query(StoreCommercialTerms).order_by(StoreCommercialTerms.anomes.asc()).all():
         termos_por_cnpj[termo.cnpj_loja] = termo  # mais recente sobrescreve
 
     carterizacao_por_chave: dict[str, StoreRegistryMonthly] = {}

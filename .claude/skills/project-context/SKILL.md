@@ -327,11 +327,36 @@ depois abrir a tela pra validar visualmente contra o Excel.
    quebrava a rota INTEIRA pra qualquer mês com uma linha assim (mesma classe do bug do FATOR_META,
    ver `rpa-conventions` item 25/26). Corrigido: `_percent` agora trata `"-"`/string vazia como
    `None` em vez de lançar `ValueError`.
-   **Pendente**: rodar `seed_comissao_avista.py` e `seed_producao_por_filial.py` contra produção
-   (não dá pra fazer isso do sandbox — sem rede pro Postgres do Render) e confirmar com o usuário
-   que Jan-Ago/26 aparecem completos em `/dashboard/base-final`. A lacuna isolada de Loja/Área "—"
-   em algumas linhas de Setembro (CNPJ não encontrado em `config_carteira`) provavelmente é loja
-   nova ainda não cadastrada — não investigada a fundo, sinalizar ao usuário em vez de assumir bug.
+   **Rodado pelo usuário (2026-09-04)** — revelou 2 bugs reais NOVOS, achados comparando Ago/26
+   contra os números reais do usuário:
+   1. **`termos_por_cnpj` (config_carteira/`StoreCommercialTerms`) zerava Código Loja/Nome
+      Loja/Grupo Loja/Cidade pra quase toda a base histórica** (Ago/26: 0 de 505 contratos com
+      essas colunas preenchidas). Causa: uma "modernização" de sessão anterior filtrava por
+      `anomes <= período`, mas a aba `config_carteira` de origem NÃO é uma série mensal de
+      verdade — é cadastro de "estado atual conhecido" (487 de 522 linhas todas com ANOMES do mês
+      corrente, poucas linhas mais antigas nunca re-tocadas). Revertido pra usar sempre o cadastro
+      mais recente por CNPJ, sem filtro de período — mesmo comportamento do XLOOKUP simples da
+      planilha original nessa aba. Ver comentário longo em `base_final.py`.
+   2. **Proposta errada casada por Cd Contrato em `digitacao_analitico`** — uma mesma proposta
+      aparece VÁRIAS vezes na planilha conforme avança de fase ("PROPOSTA APROVADA" ->
+      "PROPOSTA PAGA"), às vezes com `Vl Financiamento` levemente diferente entre fases. O código
+      pegava a fase ERRADA (a mais recente) por causa de um loop de dict-overwrite sem ORDER BY —
+      a fórmula original (`XLOOKUP` sem 6º argumento) pega a PRIMEIRA ocorrência de cima pra baixo
+      na planilha, que (conferido: `db_pagasanalitico` é 100% cronológico ascendente, 0 linhas fora
+      de ordem em 15330) equivale à proposta mais ANTIGA. Corrigido: `propostas_por_contrato` agora
+      ordena por `(metric_date, created_at) ASC` e mantém a primeira ocorrência (`setdefault`).
+      Verificado contra a planilha real (Ago/26, 505 contratos): `Vl Financiamento` bateu exato
+      (R$ 22.442.646,18) e `Vl Seguro AP` bateu exato (R$ 64.124,40) depois do fix — só
+      `Vl Seguro Prestamista` ficou com uma pequena divergência (R$ 580.105,18 calculado vs
+      R$ 583.804,86 que o usuário confirmou como "correto", mas comparando com o número que JÁ
+      aparecia no dashboard antes do fix — pode não ter sido re-conferido de forma independente).
+      Sinalizado ao usuário pra confirmar esse campo específico, não assumido como bug adicional
+      sem evidência.
+   **Pendente**: esses dois fixes mudam `base_final.py` (lógica da API), não dado — precisam de
+   DEPLOY do backend no Render (branch atual não é necessariamente a que o Render acompanha; as
+   cargas históricas via `seed_*.py` rodaram direto contra o Postgres de produção pelo usuário,
+   sem passar pelo deploy do serviço web). Confirmar com o usuário qual é o fluxo de deploy antes
+   de assumir que o fix já está no ar.
 
 **Bug real na primeira tentativa de carga (2026-09-03)**: `psycopg.errors.NumericValueOutOfRange` em
 `store_registry_monthly.mercado` — a coluna "Mercado" de `db_carterizacao`/`config_carteira` **não é
