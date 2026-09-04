@@ -232,6 +232,20 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     dela começa com `%` ou `R$` antes de decidir qual helper usar — não confiar em lembrar a regra de
     cabeça.
 
+26. **`acompanhamento_veiculos` (digitacao_analitico) usava uma janela relativa curta demais
+    ("30 day") pro que `base_final` precisa.** Descoberto em 2026-09-04: `Dt Financiamento`/
+    `Vl Financiamento` vinham vazios pra boa parte dos contratos de `base_final`, porque a proposta
+    de um contrato apurado no mês corrente pode ter sido digitada MESES antes — 30 dias de janela
+    só cobre proposta bem recente. Confirmado contra a planilha real do usuário: `db_pagasanalitico`
+    tem 8 meses de histórico acumulado (jan-ago/2026), não um recorte de 30 dias. Trocado o filtro
+    (`Dt Relatorio Date`) de `"30 day"` pra `"12 month"`. **Efeito colateral**: o arquivo baixado
+    fica bem maior (milhares de linhas em vez de centenas) — se o download começar a estourar
+    `download_wait_ms` (60s) ou o parsing ficar lento, considerar reduzir pra algo intermediário
+    (ex.: "6 month") em vez de voltar pra 30 dias. Lição geral: ao herdar um filtro de janela relativa
+    copiado de uma URL que o usuário compartilhou num momento específico, não assumir que aquela
+    janela serve pra todo uso futuro do dado — conferir contra o volume real que o caso de uso
+    precisa (aqui, cruzar com contratos apurados até muito depois da digitação).
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por

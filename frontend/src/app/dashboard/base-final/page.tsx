@@ -155,6 +155,23 @@ export default function BaseFinalPage() {
     });
   }
 
+  // Valores distintos por coluna (pro filtro-dropdown de colunas categóricas
+  // — texto e data). Calculado sobre TODAS as linhas do período, não sobre o
+  // resultado já filtrado — os dropdowns não fazem cascata entre si.
+  const distinctValues = useMemo(() => {
+    const map = {} as Record<keyof BaseFinalRow, string[]>;
+    for (const col of COLUMNS) {
+      if (col.format !== "text" && col.format !== "date") continue;
+      const set = new Set<string>();
+      for (const row of rows) {
+        const v = row[col.key];
+        if (v !== null && v !== undefined && v !== "") set.add(String(v));
+      }
+      map[col.key] = Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+    }
+    return map;
+  }, [rows]);
+
   const filteredSortedRows = useMemo(() => {
     const activeFilters = Object.entries(filters).filter(([, v]) => v && v.trim() !== "");
 
@@ -190,6 +207,28 @@ export default function BaseFinalPage() {
 
     return result;
   }, [rows, filters, sort]);
+
+  // Subtotal por coluna (reage aos filtros ativos, igual SUBTOTAL() do Excel
+  // com autofiltro): soma pra colunas numéricas (com valor), contagem de
+  // linhas preenchidas pra colunas de texto/data (sem valor).
+  const subtotals = useMemo(() => {
+    const result = {} as Record<keyof BaseFinalRow, number>;
+    for (const col of COLUMNS) {
+      const isNumeric = col.format === "currency" || col.format === "percent" || col.format === "number";
+      if (isNumeric) {
+        result[col.key] = filteredSortedRows.reduce((sum, row) => {
+          const v = row[col.key];
+          return v !== null && v !== undefined ? sum + Number(v) : sum;
+        }, 0);
+      } else {
+        result[col.key] = filteredSortedRows.filter((row) => {
+          const v = row[col.key];
+          return v !== null && v !== undefined && v !== "";
+        }).length;
+      }
+    }
+    return result;
+  }, [filteredSortedRows]);
 
   // Cabeçalho agrupado (2 linhas, igual à planilha original): calcula quantas
   // colunas seguidas pertencem ao mesmo grupo pra usar colSpan.
@@ -297,13 +336,36 @@ export default function BaseFinalPage() {
                           {col.label}
                           {sort?.key === col.key && <span>{sort.direction === "asc" ? "▲" : "▼"}</span>}
                         </button>
-                        <input
-                          type="text"
-                          value={filters[col.key] ?? ""}
-                          onChange={(e) => handleFilterChange(col.key, e.target.value)}
-                          placeholder="filtrar..."
-                          className="mt-1 w-full rounded border border-zinc-200 px-1 py-0.5 text-xs font-normal text-zinc-700"
-                        />
+                        {col.format === "text" || col.format === "date" ? (
+                          <select
+                            value={filters[col.key] ?? ""}
+                            onChange={(e) => handleFilterChange(col.key, e.target.value)}
+                            className="mt-1 w-full rounded border border-zinc-200 px-1 py-0.5 text-xs font-normal text-zinc-700"
+                          >
+                            <option value="">(Todos)</option>
+                            {(distinctValues[col.key] ?? []).map((v) => {
+                              // O filtro compara contra o texto JÁ FORMATADO da célula
+                              // (ver `filteredSortedRows`), então a opção do dropdown
+                              // precisa usar o mesmo texto formatado como valor —
+                              // senão data ISO ("2026-08-15") nunca bate com o exibido
+                              // na tabela ("15/08/2026").
+                              const display = col.format === "date" ? formatCell(v, "date") : v;
+                              return (
+                                <option key={v} value={display}>
+                                  {display}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            value={filters[col.key] ?? ""}
+                            onChange={(e) => handleFilterChange(col.key, e.target.value)}
+                            placeholder="filtrar..."
+                            className="mt-1 w-full rounded border border-zinc-200 px-1 py-0.5 text-xs font-normal text-zinc-700"
+                          />
+                        )}
                       </th>
                     ))}
                   </tr>
@@ -326,6 +388,23 @@ export default function BaseFinalPage() {
                     </tr>
                   ))}
                 </tbody>
+                {filteredSortedRows.length > 0 && (
+                  <tfoot className="sticky bottom-0 z-10 bg-zinc-100 font-semibold">
+                    <tr>
+                      {COLUMNS.map((col, i) => {
+                        const isNumeric =
+                          col.format === "currency" || col.format === "percent" || col.format === "number";
+                        const value = subtotals[col.key];
+                        return (
+                          <td key={col.key} className="whitespace-nowrap border-t-2 border-zinc-300 px-2 py-1 text-zinc-800">
+                            {i === 0 && "Subtotal: "}
+                            {isNumeric ? formatCell(value, col.format) : `${value} linhas`}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           </div>
