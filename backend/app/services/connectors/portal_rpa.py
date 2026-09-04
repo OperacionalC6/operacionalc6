@@ -366,12 +366,21 @@ class PortalRpaConnector(DataConnector):
 
     @staticmethod
     def _parse_report(
-        file_path: Path, report_cfg: dict, date_from: date, date_to: date
+        file_path: Path,
+        report_cfg: dict,
+        date_from: date,
+        date_to: date,
+        sheet_name: str | int = 0,
     ) -> list[ConnectorRecord]:
         mapping = report_cfg["column_mapping"]
 
         if file_path.suffix.lower() in (".xlsx", ".xls"):
-            df = pd.read_excel(file_path)
+            # sheet_name só importa pra quem chama este parser fora do fluxo normal
+            # do RPA (ex.: app/seed_digitacao_analitico.py lendo uma aba específica
+            # de uma planilha do usuário com várias abas) — os downloads reais do
+            # Looker/portal sempre vêm com uma única aba, então o default (0 = a
+            # primeira) preserva o comportamento de sempre.
+            df = pd.read_excel(file_path, sheet_name=sheet_name)
         else:
             # Sem sep=None/engine="python": os exports do Looker têm valores
             # monetários entre aspas com vírgula de milhar dentro (ex.: "R$
@@ -397,12 +406,18 @@ class PortalRpaConnector(DataConnector):
                 for col in mapping.get("dimension_columns", [])
                 if col in df.columns
             }
-            value = PortalRpaConnector._parse_brl_value(row[mapping["value_column"]])
-            if pd.isna(value):
+            valor_bruto = row[mapping["value_column"]]
+            if pd.isna(valor_bruto) or (isinstance(valor_bruto, str) and not valor_bruto.strip()):
                 # Célula de valor vazia (ex.: mês corrente ainda sem apuração/estimativa
-                # calculada) — diferente de dimensão NaN (vira None/null), aqui não tem
-                # como gravar 'NaN' numa métrica sem quebrar soma/média futura em SQL.
-                # Pular a linha é melhor que gravar um valor inválido.
+                # calculada, ou string vazia — achado real na carga histórica via Excel
+                # 2026-09-04, 1 linha em 15k) — diferente de dimensão NaN (vira
+                # None/null), aqui não tem como gravar 'NaN' numa métrica sem quebrar
+                # soma/média futura em SQL. Pular a linha é melhor que gravar um valor
+                # inválido. Checar ANTES de chamar o parser: uma string vazia não é
+                # NaN pro pandas, mas também não é um número válido.
+                continue
+            value = PortalRpaConnector._parse_brl_value(valor_bruto)
+            if pd.isna(value):
                 continue
             records.append(
                 ConnectorRecord(

@@ -233,18 +233,32 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     cabeça.
 
 26. **`acompanhamento_veiculos` (digitacao_analitico) usava uma janela relativa curta demais
-    ("30 day") pro que `base_final` precisa.** Descoberto em 2026-09-04: `Dt Financiamento`/
-    `Vl Financiamento` vinham vazios pra boa parte dos contratos de `base_final`, porque a proposta
-    de um contrato apurado no mês corrente pode ter sido digitada MESES antes — 30 dias de janela
-    só cobre proposta bem recente. Confirmado contra a planilha real do usuário: `db_pagasanalitico`
-    tem 8 meses de histórico acumulado (jan-ago/2026), não um recorte de 30 dias. Trocado o filtro
-    (`Dt Relatorio Date`) de `"30 day"` pra `"12 month"`. **Efeito colateral**: o arquivo baixado
-    fica bem maior (milhares de linhas em vez de centenas) — se o download começar a estourar
-    `download_wait_ms` (60s) ou o parsing ficar lento, considerar reduzir pra algo intermediário
-    (ex.: "6 month") em vez de voltar pra 30 dias. Lição geral: ao herdar um filtro de janela relativa
-    copiado de uma URL que o usuário compartilhou num momento específico, não assumir que aquela
-    janela serve pra todo uso futuro do dado — conferir contra o volume real que o caso de uso
-    precisa (aqui, cruzar com contratos apurados até muito depois da digitação).
+    ("30 day") pro que `base_final` precisa — mas widening não é a solução.** Descoberto em
+    2026-09-04: `Dt Financiamento`/`Vl Financiamento` vinham vazios pra boa parte dos contratos de
+    `base_final`, porque a proposta de um contrato apurado no mês corrente pode ter sido digitada
+    MESES antes — 30 dias de janela só cobre proposta bem recente. Primeira tentativa: trocar o
+    filtro (`Dt Relatorio Date`) de `"30 day"` pra `"12 month"`. **Revertida** depois que o usuário
+    apontou uma limitação de plataforma que eu não conhecia: várias tiles do Looker cortam o
+    export (CSV/XLSX) em ~500 linhas — uma janela de 12 meses, com ~100 propostas/dia reais,
+    geraria milhares de linhas e o download provavelmente viria truncado silenciosamente (sem erro,
+    só dado faltando de um jeito difícil de perceber). **Solução adotada**: filtro voltou pra
+    `"3 day"` (bem abaixo do limite, cobre o RPA rodando 3x/dia com folga de auto-cura), e o
+    histórico (jan-ago/2026) é carregado uma única vez a partir da planilha `Construcao.xlsx` do
+    usuário (aba `db_pagasanalitico`, ~15k linhas — inviável de baixar do Looker de qualquer forma
+    dado o limite de 500) via `backend/app/seed_digitacao_analitico.py`. Esse script reaproveita o
+    `PortalRpaConnector._parse_report` (mesmo `column_mapping` do RPA real) passando
+    `sheet_name="db_pagasanalitico"` — por isso `_parse_report` ganhou um parâmetro opcional
+    `sheet_name` (default `0`, comportamento de sempre pros downloads reais que são sempre
+    single-sheet). Rodar direto contra o `Construcao.xlsx` original (não precisa extrair a aba
+    antes). A partir do primeiro dia não coberto pela carga, o RPA (janela curta) assume sozinho —
+    sem sobreposição, cada um cobre um pedaço da linha do tempo. **Bug lateral encontrado testando
+    a carga real**: 1 linha em 15330 tinha `Vl Financiamento` como string vazia (`""`), não `NaN` —
+    `pd.isna("")` é `False`, então o parser tentava `float("")` e quebrava o lote inteiro por causa
+    de 1 linha. Corrigido em `_parse_report`: checar string vazia/só-espaço ANTES de chamar
+    `_parse_brl_value`, não só depois via `pd.isna(value)`. Lição geral: ao herdar um filtro de
+    janela relativa copiado de uma URL que o usuário compartilhou num momento específico, não
+    assumir que aquela janela serve pra todo uso futuro do dado nem que dá pra simplesmente
+    alargá-la — primeiro confirmar limites de plataforma (linhas por export) contra o volume real.
 
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 

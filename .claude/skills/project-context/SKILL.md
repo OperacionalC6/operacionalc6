@@ -292,6 +292,27 @@ clique no cabeçalho, tudo client-side. `next build`/`eslint` limpos. Navegaçã
 navegador de verdade** — depende do usuário rodar o pipeline de novo (pré-requisito de RPA acima) e
 depois abrir a tela pra validar visualmente contra o Excel.
 
+**Feedback do usuário sobre `/dashboard/base-final` (2026-09-04) — 3 pedidos, todos implementados:**
+1. Linha de Subtotal no rodapé da tabela: SOMA pras colunas com valor numérico (moeda/%/número),
+   CONTAGEM de linhas pras colunas de texto/data — igual `SUBTOTAL()` do Excel, recalcula reagindo
+   aos filtros ativos (via `filteredSortedRows`, não `rows` cru).
+2. Filtros de coluna viraram dropdown (`<select>` com valores distintos, populado a partir de `rows`)
+   pra colunas de texto/data; input livre continua só pras colunas numéricas.
+3. `Dt Financiamento`/`Vl Financiamento` vinham incompletos — causa raiz e correção: ver item 26 da
+   skill `rpa-conventions` (limite de ~500 linhas por export em várias tiles do Looker, confirmado
+   pelo usuário como conhecimento de domínio da plataforma). Solução final NÃO foi alargar a janela
+   do RPA (primeira tentativa, revertida): é uma carga histórica única a partir do
+   `Construcao.xlsx` do usuário (aba `db_pagasanalitico`, jan-ago/2026) via
+   `backend/app/seed_digitacao_analitico.py`, com o RPA (janela `"3 day"`) assumindo o restante a
+   partir de setembro/2026 em diante — cada um cobre um pedaço da linha do tempo, sem sobreposição.
+   Testado em dry-run no sandbox contra o `Construcao.xlsx` real do usuário: 15329 de 15330 linhas
+   parseadas com sucesso (1 linha com `Vl Financiamento` vazio, legitimamente pulada — achou também
+   um bug lateral de parsing de string vazia, corrigido, ver `rpa-conventions` item 26).
+   **Pendente**: rodar esse script contra o banco de produção (não dá pra fazer isso do sandbox —
+   sem rede pro Postgres do Render) e confirmar com o usuário que as colunas ficaram completas depois.
+   Comando: `python -m app.seed_digitacao_analitico /caminho/Construcao.xlsx 2026-01-01 2026-08-31`
+   (aponta direto pro arquivo original de várias abas, o script já sabe pegar a aba certa).
+
 **Bug real na primeira tentativa de carga (2026-09-03)**: `psycopg.errors.NumericValueOutOfRange` em
 `store_registry_monthly.mercado` — a coluna "Mercado" de `db_carterizacao`/`config_carteira` **não é
 percentual** (só assumi isso porque a primeira linha de amostra que olhei tinha 0/vazio, igual
