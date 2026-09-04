@@ -353,12 +353,27 @@ depois abrir a tela pra validar visualmente contra o Excel.
       Sinalizado ao usuário pra confirmar esse campo específico, não assumido como bug adicional
       sem evidência.
    **Confirmado pelo usuário (2026-09-04): o Render faz deploy automático a partir da branch
-   `claude/previous-session-recovery-fv67s4`** (a branch de trabalho atual) — os dois fixes acima
-   (commit `67a39aa`) entram em produção sozinhos depois do push, sem precisar de merge pra
-   `main`/PR. Pendente: usuário confirmar visualmente em `/dashboard/base-final` (Ago/26) que
-   Código Loja/Nome Loja/Grupo Loja/Cidade e os totais de Vl Financiamento/Vl Seguro AP baixados
-   já refletem o fix, e checar de forma independente o campo `Vl Seguro Prestamista` (ver
-   discrepância não resolvida acima).
+   `claude/previous-session-recovery-fv67s4`** (a branch de trabalho atual) — commits nela entram
+   em produção sozinhos depois do push, sem precisar de merge pra `main`/PR.
+
+   **3º bug real achado depois do deploy** (usuário testou de novo: Código Loja/Nome Loja/Cidade
+   melhoraram bastante mas ainda faltavam em ~115 de 505 contratos de Ago/26): CNPJ com zero à
+   esquerda (ex.: `02648313000186`) perdia o zero na importação de `config_carteira`/
+   `db_carterizacao` — pandas lê a coluna como `int64`, e `_clean_str` fazia só `str(int(value))`
+   sem repor o zero, produzindo CNPJ de 13 dígitos que nunca batia com o CNPJ de 14 dígitos extraído
+   do texto "Lojista" (`_extract_cnpj` em `base_final.py`). Afetava 118 de 522 lojas de
+   `config_carteira` (23% — bate com a fração de contratos sem match). Mesma classe de bug do "CNPJ
+   como número no JSONB" já visto em `mercado_producao_c6` (ver `rpa-conventions`), mas na tabela de
+   cadastro em vez de métrica. Corrigido: `_clean_cnpj()` novo em `config_import.py` (zero-preenche
+   até 14 dígitos, ou 8 pra `raiz_cnpj`), aplicado em `import_store_registry_monthly` e
+   `import_store_commercial_terms`.
+   **Pendente**: esse fix precisa RECARREGAR o cadastro (`python -m app.seed_config
+   /caminho/Construcao.xlsx` de novo contra produção) — é bug de importação, dado já carregado
+   errado no banco não se corrige sozinho só com o deploy do código novo. Depois de recarregar,
+   confirmar com o usuário que Ago/26 chega perto de 505/505 nas colunas de loja. Também confirmar
+   se a divergência de `Vl Seguro Prestamista` (R$ 580.105,18 calculado vs R$ 583.804,86 apontado
+   pelo usuário) é bug real ou número de referência desatualizado — ainda sem resposta do usuário
+   sobre isso especificamente.
 
 **Bug real na primeira tentativa de carga (2026-09-03)**: `psycopg.errors.NumericValueOutOfRange` em
 `store_registry_monthly.mercado` — a coluna "Mercado" de `db_carterizacao`/`config_carteira` **não é

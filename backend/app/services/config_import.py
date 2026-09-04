@@ -60,6 +60,26 @@ def _clean_numeric(value: object) -> float | None:
         return None
 
 
+def _clean_cnpj(value: object, digits: int = 14) -> str | None:
+    """CNPJ (14 dígitos) ou raiz de CNPJ (8 dígitos), com zero à esquerda preservado.
+
+    Achado em produção 2026-09-04: o Excel/pandas lê essas colunas como int64
+    (ex.: "02648313000186" vira o número 2648313000186), e `_clean_str` fazia só
+    `str(int(value))` sem repor o zero — 118 de 522 lojas de `config_carteira`
+    (23%) ficavam com CNPJ de 13 dígitos, nunca batendo com o CNPJ de 14 dígitos
+    extraído do texto "Lojista" em `base_final.py` (`_extract_cnpj`, regex
+    `\\d{14}`). Isso zerava Código Loja/Nome Loja/Grupo Loja/Cidade/Área/GN pra
+    ~23% dos contratos de qualquer mês, silenciosamente (sem erro, só "—" na
+    tela) — mesma classe de bug do "CNPJ como número no JSONB" já visto em
+    `mercado_producao_c6`/`mercado_financiamento_total` (ver `rpa-conventions`),
+    mas numa tabela de cadastro em vez de métrica.
+    """
+    text = _clean_str(value)
+    if text is None:
+        return None
+    return text.zfill(digits) if text.isdigit() else text
+
+
 def import_store_registry_monthly(db: Session, df: pd.DataFrame) -> int:
     """`db_carterizacao`: histórico mês a mês de área/GN/GP por loja."""
     db.query(StoreRegistryMonthly).delete(synchronize_session=False)
@@ -77,7 +97,7 @@ def import_store_registry_monthly(db: Session, df: pd.DataFrame) -> int:
                 mes=mes,
                 anomes=anomes,
                 chave_loja=chave_loja,
-                cnpj_loja=_clean_str(row.get("Cnpj Da Loja")),
+                cnpj_loja=_clean_cnpj(row.get("Cnpj Da Loja")),
                 carterizacao_ehs=_clean_str(row.get("CARTERIZACAO_EHS")),
                 cd_loja=_clean_str(row.get("Cd Loja")),
                 loja=_clean_str(row.get("Loja")),
@@ -110,7 +130,7 @@ def import_store_commercial_terms(db: Session, df: pd.DataFrame) -> int:
     db.query(StoreCommercialTerms).delete(synchronize_session=False)
     count = 0
     for _, row in df.iterrows():
-        cnpj_loja = _clean_str(row.get("CNPJ DA LOJA"))
+        cnpj_loja = _clean_cnpj(row.get("CNPJ DA LOJA"))
         anomes = _clean_str(row.get("ANOMES"))
         if not cnpj_loja or not anomes:
             continue
@@ -119,7 +139,7 @@ def import_store_commercial_terms(db: Session, df: pd.DataFrame) -> int:
                 cnpj_loja=cnpj_loja,
                 anomes=anomes,
                 carteira_ajustada=_clean_str(row.get("CARTEIRA_AJUSTADA")),
-                raiz_cnpj=_clean_str(row.get("RAIZ_CNPJ")),
+                raiz_cnpj=_clean_cnpj(row.get("RAIZ_CNPJ"), digits=8),
                 cd_loja=_clean_str(row.get("CD LOJA")),
                 loja=_clean_str(row.get("LOJA")),
                 grupo_loja=_clean_str(row.get("GRUPO_LOJA")),
