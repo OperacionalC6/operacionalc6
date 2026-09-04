@@ -224,6 +224,13 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     principal, só que sem passar pelo `_parse_brl_value` (que só roda no `value_column`). Ao ler
     esses campos num serviço novo, usar `parse_looker_number` (money) ou fazer o parse de `%`
     manualmente (remover o `%` e dividir por 100) — nunca `float()` direto, quebra igual ao item 21.
+    **Aconteceu de novo na hora, mesmo já sabendo da regra**: `FATOR_META` (dimensão
+    `"% Ating. Ponderado Ajustado"`, ex.: `"150.0%"`) foi lido com `_to_float` (`float()` puro) em vez
+    de `_percent` em `base_final.py`, quebrando `/gn-dashboard/base-final` com 500 em produção
+    (2026-09-04, `ValueError: could not convert string to float: '150.0%'`, achado pelo log do Render,
+    não adivinhado). Lição prática: ao adicionar QUALQUER dimensão nova a um serviço, checar se o nome
+    dela começa com `%` ou `R$` antes de decidir qual helper usar — não confiar em lembrar a regra de
+    cabeça.
 
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 

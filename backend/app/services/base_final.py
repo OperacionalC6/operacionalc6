@@ -167,9 +167,13 @@ def get_base_final_rows(db: Session, ano: int, mes: int) -> list[dict]:
     for m in db.query(Metric).filter(Metric.metric_name == "producao_por_filial", Metric.metric_date == periodo).all():
         dims = m.dimensions or {}
         nome_filial = _strip_filial_code(dims.get("Filial"))
-        fator = dims.get("% Ating. Ponderado Ajustado")
+        # Vem como texto formatado do Looker (ex.: "150.0%"), igual aos outros
+        # campos percentuais que ficam só como dimensão — usar _percent, não
+        # _to_float (ver rpa-conventions item 25; achado em produção 2026-09-04
+        # quando esse campo específico quebrou com ValueError).
+        fator = _percent(dims, "% Ating. Ponderado Ajustado")
         if nome_filial and fator is not None:
-            fator_meta_por_filial[nome_filial] = _to_float(fator)
+            fator_meta_por_filial[nome_filial] = fator
 
     rows: list[dict] = []
     for contrato in contratos:
