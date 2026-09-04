@@ -14,22 +14,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ApiError, fetchGnAreaScorecard, fetchGnAreas, fetchMe } from "@/lib/api";
 import { clearTokens, isLoggedIn } from "@/lib/auth";
+import { MESES } from "@/lib/dates";
 import type { GnScorecardLoja, User } from "@/lib/types";
-
-const MESES = [
-  "Janeiro",
-  "Fevereiro",
-  "Março",
-  "Abril",
-  "Maio",
-  "Junho",
-  "Julho",
-  "Agosto",
-  "Setembro",
-  "Outubro",
-  "Novembro",
-  "Dezembro",
-];
 
 function formatCurrency(value: number | null): string {
   if (value === null) return "—";
@@ -128,6 +114,9 @@ export default function GnDashboardPage() {
           )}
         </div>
         <div className="flex items-center gap-4">
+          <Link href="/dashboard/base-final" className="text-sm text-zinc-600 hover:text-zinc-900">
+            base_final
+          </Link>
           <Link href="/dashboard" className="text-sm text-zinc-600 hover:text-zinc-900">
             ← Visão geral
           </Link>

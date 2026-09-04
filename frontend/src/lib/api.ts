@@ -2,7 +2,7 @@
 
 import { API_BASE_URL } from "./config";
 import { clearTokens, getAccessToken, getRefreshToken, setTokens } from "./auth";
-import type { GnAreaScorecard, Metric, User } from "./types";
+import type { BaseFinalRow, GnAreaScorecard, Metric, User } from "./types";
 
 class ApiError extends Error {
   status: number;
@@ -99,6 +99,12 @@ export function fetchGnAreaScorecard(
 ): Promise<GnAreaScorecard> {
   const query = new URLSearchParams({ area, ano: String(ano), mes: String(mes) });
   return apiFetch<GnAreaScorecard>(`/gn-dashboard/area-scorecard?${query.toString()}`);
+}
+
+export function fetchBaseFinal(ano: number, mes: number, area?: string): Promise<BaseFinalRow[]> {
+  const query = new URLSearchParams({ ano: String(ano), mes: String(mes) });
+  if (area) query.set("area", area);
+  return apiFetch<BaseFinalRow[]>(`/gn-dashboard/base-final?${query.toString()}`);
 }
 
 export { ApiError };
