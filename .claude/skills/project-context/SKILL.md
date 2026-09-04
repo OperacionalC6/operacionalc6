@@ -308,10 +308,30 @@ depois abrir a tela pra validar visualmente contra o Excel.
    Testado em dry-run no sandbox contra o `Construcao.xlsx` real do usuário: 15329 de 15330 linhas
    parseadas com sucesso (1 linha com `Vl Financiamento` vazio, legitimamente pulada — achou também
    um bug lateral de parsing de string vazia, corrigido, ver `rpa-conventions` item 26).
-   **Pendente**: rodar esse script contra o banco de produção (não dá pra fazer isso do sandbox —
-   sem rede pro Postgres do Render) e confirmar com o usuário que as colunas ficaram completas depois.
-   Comando: `python -m app.seed_digitacao_analitico /caminho/Construcao.xlsx 2026-01-01 2026-08-31`
-   (aponta direto pro arquivo original de várias abas, o script já sabe pegar a aba certa).
+   **Rodado em produção (2026-09-04) pelo usuário**: 15329 registros de `digitacao_analitico`
+   carregados com sucesso. Mas revelou um problema maior: `base_final` retornava **0 contratos pra
+   Jan/26** (e provavelmente qualquer mês antes da janela que o RPA já cobria) — a causa não é
+   `digitacao_analitico`, é `comissao_avista` (a base-fato PRINCIPAL de `base_final`, uma linha por
+   contrato) nunca ter sido carregada historicamente, só o RPA recente. Setembro também mostrava
+   várias linhas com Loja/Área/GN em branco ("—"). Investigado e resolvido com mais 2 cargas
+   históricas na mesma família:
+   - `app/seed_comissao_avista.py` (aba `db_apuracaoavista`) — resolve o "0 contratos" em meses
+     antigos.
+   - `app/seed_producao_por_filial.py` (aba `db_Metas`) — resolve FATOR_META (comissão de GN)
+     ausente em meses antigos.
+   Lógica comum extraída pra `app/services/historical_seed.py` (as 3 cargas usam o mesmo padrão:
+   `_parse_report` + `column_mapping` do `portal_selectors.json` + delete-then-insert idempotente).
+   **Bug real achado testando a carga de `comissao_avista` contra o Excel de verdade**: ~45% das
+   linhas (1591 de 3548) têm `"% Comissão Campanha Parceiro" == "-"` (sentinel de texto do Looker
+   pra "não se aplica", não célula vazia) — `_percent()` em `base_final.py` fazia `float("-")` e
+   quebrava a rota INTEIRA pra qualquer mês com uma linha assim (mesma classe do bug do FATOR_META,
+   ver `rpa-conventions` item 25/26). Corrigido: `_percent` agora trata `"-"`/string vazia como
+   `None` em vez de lançar `ValueError`.
+   **Pendente**: rodar `seed_comissao_avista.py` e `seed_producao_por_filial.py` contra produção
+   (não dá pra fazer isso do sandbox — sem rede pro Postgres do Render) e confirmar com o usuário
+   que Jan-Ago/26 aparecem completos em `/dashboard/base-final`. A lacuna isolada de Loja/Área "—"
+   em algumas linhas de Setembro (CNPJ não encontrado em `config_carteira`) provavelmente é loja
+   nova ainda não cadastrada — não investigada a fundo, sinalizar ao usuário em vez de assumir bug.
 
 **Bug real na primeira tentativa de carga (2026-09-03)**: `psycopg.errors.NumericValueOutOfRange` em
 `store_registry_monthly.mercado` — a coluna "Mercado" de `db_carterizacao`/`config_carteira` **não é

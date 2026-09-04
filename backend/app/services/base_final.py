@@ -75,7 +75,17 @@ def _percent(dims: dict, key: str) -> float | None:
         return None
     if isinstance(raw, (int, float)):
         return float(raw)
-    return float(str(raw).replace("%", "").strip()) / 100
+    texto = str(raw).replace("%", "").strip()
+    if not texto or texto == "-":
+        # Looker usa "-" (texto, não célula vazia) como "não se aplica" em campos
+        # condicionais — ex.: "% Comissão Campanha Parceiro" quando o contrato não
+        # tem campanha ativa (achado ao testar a carga histórica real 2026-09-04:
+        # ~45% das linhas de db_apuracaoavista têm esse sentinel nesse campo
+        # específico). Sem esse check, float("-") derruba a rota inteira pra
+        # qualquer mês que tenha uma linha assim — mesma classe de bug do item 25
+        # da skill rpa-conventions, mas com um sentinel de texto em vez de "%".
+        return None
+    return float(texto) / 100
 
 
 def _text(dims: dict, key: str) -> str | None:
