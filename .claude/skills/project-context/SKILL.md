@@ -284,7 +284,13 @@ em todo o resto (sem código) — tratado com `_strip_filial_code`. E campos mon
 ficam só como dimensão (nunca viram `value`) vêm como texto formatado do Looker igual às colunas de
 valor — usar `parse_looker_number`/parse manual de `%`, nunca `float()` direto.
 
-Frontend (tabela filtrável/ordenável, tipo Excel) **ainda não construído** — próximo passo.
+**Frontend implementado (2026-09-04)**: `frontend/src/app/dashboard/base-final/page.tsx` — uma linha
+por contrato, ~50 colunas, cabeçalho agrupado de 2 linhas (igual à planilha: Data, Loja, Contrato, Vl
+Financ., Vl Seguro, Comissão EHS, Taxa, Comissão GN, IDs), filtro de texto por coluna + ordenação por
+clique no cabeçalho, tudo client-side. `next build`/`eslint` limpos. Navegação entre as 3 telas
+(`/dashboard`, `/dashboard/gn`, `/dashboard/base-final`). **Ainda não testado contra produção nem num
+navegador de verdade** — depende do usuário rodar o pipeline de novo (pré-requisito de RPA acima) e
+depois abrir a tela pra validar visualmente contra o Excel.
 
 **Bug real na primeira tentativa de carga (2026-09-03)**: `psycopg.errors.NumericValueOutOfRange` em
 `store_registry_monthly.mercado` — a coluna "Mercado" de `db_carterizacao`/`config_carteira` **não é
