@@ -254,6 +254,38 @@ navegador de verdade** — login exige Google OAuth real, sem acesso a partir do
 desenvolvimento; falta o usuário abrir `/dashboard/gn` depois do deploy no Vercel e confirmar
 visualmente.
 
+**Feedback do usuário (2026-09-04) — números errados + pivô de escopo:** ao testar `/dashboard/gn`
+de verdade, o usuário reportou números muito abaixo do esperado (ex.: produção da área "MG 1 CURVELO -
+P" mostrando R$ 200 mil contra R$ 1,75 milhão esperado, 10 lojas "com contrato" contra 41 esperado) e
+pediu pra focar em construir a **`base_final` completa** (réplica linha-a-linha, todas as ~54 colunas
+do Excel, incluindo o cálculo de comissão de GN) em vez de continuar debugando o resumo agregado — pra
+ele conseguir fazer os checks direto contra a planilha. Ainda não investigamos a causa da discrepância
+do resumo agregado (pode ser o mesmo lag de apuração do `comissao_avista` já documentado, agravado, ou
+outra coisa — não sabemos ainda, ficou pra depois).
+
+**`base_final` completa implementada (2026-09-04):** `app/services/base_final.py`
+(`get_base_final_rows`), exposta em `GET /gn-dashboard/base-final?ano=&mes=&area=` (área opcional).
+Réplica FIEL da fórmula original coluna por coluna — inclusive a inconsistência conhecida de
+`AREA_LOJA_EHS` (ver módulo `gn_dashboard.py`) e o provável nome trocado de `COMISSAO_SEGUROS_R$`
+(puxa de "R$ Comissão Produto - Parceiro", não "Seguros") — documentadas no docstring do módulo,
+NÃO corrigidas, porque o objetivo aqui é comparação célula a célula com o Excel do usuário.
+
+Pré-requisito novo (RPA): `comissao_avista`'s tile "Analítico" teve `dimension_columns` ampliado pra
+cobrir TODAS as colunas de `db_apuracaoavista` (antes só tinha as básicas de identificação) — sem
+isso os campos de comissão/alçada/flags de `base_final` vêm todos `None`. `producao_por_filial`
+(dentro de `apuracao_parceiro_resumo`) ganhou `% Ating. Ponderado Ajustado` (é o `FATOR_META`).
+**Precisa rodar o pipeline de novo** antes de `base-final` ter dado completo — testado o parsing
+contra os arquivos reais (486 registros de comissao_avista, 71 de producao_por_filial, sem descarte),
+mas não contra produção ainda.
+
+Descoberto no processo (`rpa-conventions` itens 24-25): a coluna "Filial" desse relatório de metas
+vem com prefixo de código (`"28151 - CONC BH 4 - P"`), diferente do formato usado como chave de área
+em todo o resto (sem código) — tratado com `_strip_filial_code`. E campos monetários/percentuais que
+ficam só como dimensão (nunca viram `value`) vêm como texto formatado do Looker igual às colunas de
+valor — usar `parse_looker_number`/parse manual de `%`, nunca `float()` direto.
+
+Frontend (tabela filtrável/ordenável, tipo Excel) **ainda não construído** — próximo passo.
+
 **Bug real na primeira tentativa de carga (2026-09-03)**: `psycopg.errors.NumericValueOutOfRange` em
 `store_registry_monthly.mercado` — a coluna "Mercado" de `db_carterizacao`/`config_carteira` **não é
 percentual** (só assumi isso porque a primeira linha de amostra que olhei tinha 0/vazio, igual

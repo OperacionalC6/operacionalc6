@@ -101,13 +101,25 @@
             "name": "Comissão À Vista - AnalÍtico",
             "column_mapping": {
               "_origem": "Extraído do CSV real baixado em 2026-08-18. Colunas monetárias vêm como texto ('R$ 1,234.56' — vírgula de milhar, ponto decimal), tratado em _parse_brl_value.",
+              "_dimensoes_nota": "Ampliado em 2026-09-04 pra cobrir TODAS as colunas de db_apuracaoavista usadas pelo cálculo de base_final (comissão de GN) — antes só guardávamos as básicas de identificação. Única coluna do CSV real deixada de fora: 'R$ Comissão À Vista Bruto - Master' (vem com nome cheio de espaço/quebra de linha no header real, e não é usada por base_final).",
               "date_column": "Anomes Apuracao",
               "date_format": "%Y%m",
               "value_column": "R$ Comissão À Vista Bruto - Parceiro",
               "metric_name": "comissao_avista",
               "team_column": null,
               "_team_nota": "Não há coluna de equipe interna nesse dataset (é por parceiro/correspondente externo) — se precisar segmentar por equipe interna, será outra fonte.",
-              "dimension_columns": ["Cd Contrato", "Status Contrato", "Parceiro", "Lojista", "Produto", "Master"]
+              "dimension_columns": [
+                "Cd Contrato", "Status Contrato", "Parceiro", "Lojista", "Produto", "Master",
+                "Possui TXE?", "Aplicação balde?", "Tp Alcada", "Tp Alcada Considerada",
+                "Fg Spf", "Fg Spp", "Fg Carglass", "Loja Nova", "Parceiro Novo", "Campanha",
+                "R$ Vl. Seguro Campanha", "% Comissão Campanha Parceiro", "R$ Principal Total",
+                "R$ Comissão Produto - Parceiro", "R$ Comissão À Vista - Parceiro (Pré Fator)",
+                "% Fator Ajuste Produção", "R$ Seguros Total", "% Desconto TXE",
+                "R$ Principal Ajustado (TXE)", "R$ Comissão SPF - Parceiro",
+                "R$ Comissão SPP - Parceiro", "R$ Comissão Seg. Assist. - Parceiro",
+                "R$ Comissão Produção - Parceiro", "% Comissão Produção Parceiro",
+                "% Comissão Total Parceiro"
+              ]
             }
           },
           {
@@ -192,12 +204,13 @@
               {
                 "_origem": "Extraído do XLSX real baixado em 2026-09-01.",
                 "_metric_name_nota": "Mesmo motivo do padrão 'comissao_avista_por_filial': é ROLLUP da mesma produção já coberta pela tile 'Bloco de Metas' (agora por Filial) — metric_name diferente ('producao_por_filial') pra não somar em dobro com 'producao'.",
+                "_dimensoes_nota": "'% Ating. Ponderado Ajustado' adicionado em 2026-09-04 — é o FATOR_META usado pelo cálculo de comissão de GN em base_final (XLOOKUP por CHAVE_FILIAL=ano.mes.Filial, que reconstruímos no código em vez de guardar como dimensão, já que é só concatenação).",
                 "date_column": "Anomes Apuracao",
                 "date_format": "%Y%m",
                 "value_column": "R$ Produção",
                 "metric_name": "producao_por_filial",
                 "team_column": null,
-                "dimension_columns": ["Cnpj Master", "Master", "Cnpj Corban", "Parceiro", "Filial", "R$ Meta", "% Ating. Produção", "Faixa Atingimento"]
+                "dimension_columns": ["Cnpj Master", "Master", "Cnpj Corban", "Parceiro", "Filial", "R$ Meta", "% Ating. Produção", "Faixa Atingimento", "% Ating. Ponderado Ajustado"]
               },
               {
                 "_origem": "Extraído do XLSX real baixado em 2026-09-01.",

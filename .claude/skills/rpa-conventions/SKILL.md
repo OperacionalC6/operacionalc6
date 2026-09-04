@@ -212,6 +212,19 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     do mesmo parsing. Se for ler um valor numérico-como-texto de dentro de `dimensions` em
     qualquer serviço novo, usar `parse_looker_number`, nunca `float()` direto.
 
+24. **Coluna "Filial" do relatório "Bloco de Metas por Filial" vem com prefixo de código**
+    (`"28151 - CONC BH 4 - P"`), diferente do formato usado como chave de área em todo o resto do
+    sistema (`"CONC BH 4 - P"`, sem código) — descoberto em 2026-09-04 construindo `base_final`.
+    Se for cruzar essa coluna com área/filial de outro cadastro, tirar o prefixo primeiro (regex
+    `^\d+\s*-\s*(.+)$`, ver `_strip_filial_code` em `app/services/base_final.py`) — não assumir que
+    o mesmo campo em relatórios diferentes do Looker usa o mesmo formato de texto.
+
+25. **Campos monetários/percentuais que ficam só como DIMENSÃO (não viram `value`) vêm como texto
+    formatado do Looker**, ex.: `"R$ 154.00"`, `"0.20%"` — mesmo formato das colunas de valor
+    principal, só que sem passar pelo `_parse_brl_value` (que só roda no `value_column`). Ao ler
+    esses campos num serviço novo, usar `parse_looker_number` (money) ou fazer o parse de `%`
+    manualmente (remover o `%` e dividir por 100) — nunca `float()` direto, quebra igual ao item 21.
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por
