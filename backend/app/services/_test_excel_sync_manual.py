@@ -40,6 +40,10 @@ def montar_workbook_sintetico() -> openpyxl.Workbook:
         "=YEAR(N2)", "=MONTH(N2)", '=AC2&"."&S2', "=1", "=2", "=3", "=4", "=5", "=6", "=7", "=8", "=9",
         1001, datetime(2026, 9, 20), "10 - X - 111", "PROPOSTA PAGA", "AU001", 1000.0,
     ])
+    # Formatação real (moeda) na linha-modelo — pra testar se a linha nova
+    # herda o number_format, não só o valor.
+    col_vl_financiamento = header.index("Vl Financiamento") + 1
+    ws.cell(row=2, column=col_vl_financiamento).number_format = "R$ #,##0.00"
 
     # --- db_apuracaoavista: só colunas brutas ---
     ws = wb.create_sheet("db_apuracaoavista")
@@ -67,13 +71,17 @@ def montar_workbook_sintetico() -> openpyxl.Workbook:
 
 def fake_baixar(report_name, tile_key, *, filter_query_override=None, filter_value_override=None):
     if report_name == "acompanhamento_veiculos":
+        # "Vl Financiamento" vem como TEXTO no formato do Looker (ex.: "R$
+        # 2,000.00"), igual ao CSV real baixado em 2026-09-24 — reproduz o
+        # bug real (linha nova ficava com string em vez de número, diferente
+        # das linhas antigas, que sempre tiveram float de verdade).
         return pd.DataFrame({
             "ID Proposta": [2001, 2002],
             "Dt Relatório": [datetime(2026, 9, 24), datetime(2026, 9, 24)],
             "Lojista": ["20 - Y - 222", "20 - Y - 222"],
             "Status Proposta": ["PROPOSTA PAGA", "PROPOSTA APROVADA"],
             "Cd Contrato": ["AU100", "AU101"],
-            "Vl Financiamento": [2000.0, 3000.0],
+            "Vl Financiamento": ["R$ 2,000.00", "R$ 3,000.00"],
         })
     if report_name == "comissao_avista":
         # Reproduz o bug real encontrado em 2026-09-24: o CSV baixado do Looker
@@ -115,6 +123,22 @@ def main():
     formula_chave_linha4 = ws.cell(row=4, column=3).value
     assert formula_chave_linha4 == '=AC4&"."&S4', f"fórmula CHAVE_CONTRATO não arrastou certo: {formula_chave_linha4!r}"
     print("  OK: linhas inseridas e fórmulas arrastadas corretamente.\n")
+
+    print("== conferindo normalização de valor monetário + number_format (bug real 2026-09-24) ==")
+    col_vl_financiamento = 18  # "Vl Financiamento" é a 6ª coluna bruta, após 12 de fórmula (12+6=18)
+    valor_linha3 = ws.cell(row=3, column=col_vl_financiamento).value
+    assert isinstance(valor_linha3, float), (
+        f"'Vl Financiamento' devia ter virado float (era 'R$ 2,000.00' baixado como texto), "
+        f"veio {type(valor_linha3).__name__}: {valor_linha3!r}"
+    )
+    assert valor_linha3 == 2000.0, f"valor convertido errado: {valor_linha3!r}"
+    fmt_modelo = ws.cell(row=2, column=col_vl_financiamento).number_format
+    fmt_linha3 = ws.cell(row=3, column=col_vl_financiamento).number_format
+    assert fmt_linha3 == fmt_modelo, (
+        f"number_format não foi copiado da linha-modelo pra linha nova: "
+        f"modelo={fmt_modelo!r}, linha nova={fmt_linha3!r}"
+    )
+    print(f"  OK: 'R$ 2,000.00' virou {valor_linha3!r} (float) e number_format {fmt_linha3!r} copiado da linha-modelo.\n")
 
     print("== atualizar_db_apuracaoavista (mês 202609) ==")
     res = atualizar_db_apuracaoavista(wb, "202609")
