@@ -370,6 +370,42 @@ def _as_date(v: object) -> date | None:
 # ---------------------------------------------------------------------------
 
 
+def _capturar_evidencias_pagasanalitico(page: Page, evidencias: list[Path]) -> None:
+    """Print de evidência específico pra `db_pagasanalitico`, achado explorando
+    o dashboard de verdade com o usuário em 2026-09-24: depois do download da
+    tile 'Digitação Analítico', a página já fica na aba 'Analítico' do
+    dashboard (padrão), que mostra o gráfico "Digitação x Dia" com os números
+    JÁ IMPRESSOS nas próprias barras — sem precisar de hover em nada. Print
+    dessa aba, depois clica na aba "Produção" (por TEXTO do botão, estável —
+    não por posição de pixel) e tira outro print, que mostra "Produção
+    Mensal"/"Produção x Dia" (também sem hover). Cobre os dois números do
+    check original do usuário: contagem de propostas por dia e (R$) Produção.
+    Falha em achar a aba "Produção" não derruba a atualização — evidência é
+    um extra, não faz parte da lógica de dado."""
+    evidencias.append(_tirar_print_evidencia(page, "acompanhamento_veiculos_digitacao_x_dia"))
+    try:
+        page.get_by_role("button", name="Produção", exact=False).first.click()
+        page.wait_for_timeout(2000)
+        evidencias.append(_tirar_print_evidencia(page, "acompanhamento_veiculos_producao"))
+    except Exception:
+        logger.warning(
+            "Não consegui abrir a aba 'Produção' do dashboard pra tirar o print de "
+            "evidência (não afeta a atualização — os dados já foram baixados normalmente)."
+        )
+
+
+def _baixar_pagasanalitico_com_evidencias(
+    sessao: tuple[PortalRpaConnector, Page], filtro: str, evidencias: list[Path] | None
+) -> pd.DataFrame:
+    df = baixar_looker_bruto(
+        "acompanhamento_veiculos", "analitico", filter_query_override=filtro, sessao=sessao
+    )
+    if evidencias is not None:
+        _, page = sessao
+        _capturar_evidencias_pagasanalitico(page, evidencias)
+    return df
+
+
 def atualizar_db_pagasanalitico(
     wb,
     dia: date,
@@ -421,13 +457,18 @@ def atualizar_db_pagasanalitico(
         "&S+Cliente=&Gerente+Coordenador+Meta=&Gerente+Neg%C3%B3cios+Meta="
         "&Gerente+Coordenador+Corban=&Gerente+Neg%C3%B3cios+Corban=&Cd+Loja="
     )
-    df = baixar_looker_bruto(
-        "acompanhamento_veiculos",
-        "analitico",
-        filter_query_override=filtro,
-        sessao=sessao,
-        evidencias=evidencias,
-    )
+    if evidencias is None:
+        # Sem pedido de evidência, comportamento de sempre: baixar_looker_bruto
+        # decide sozinho se abre sessão nova ou reaproveita `sessao` — não
+        # precisamos tocar na página depois do download.
+        df = baixar_looker_bruto(
+            "acompanhamento_veiculos", "analitico", filter_query_override=filtro, sessao=sessao
+        )
+    elif sessao is not None:
+        df = _baixar_pagasanalitico_com_evidencias(sessao, filtro, evidencias)
+    else:
+        with sessao_looker() as sessao_local:
+            df = _baixar_pagasanalitico_com_evidencias(sessao_local, filtro, evidencias)
     df["Dt Relatório"] = pd.to_datetime(df["Dt Relatório"]).dt.date
     df = df[df["Dt Relatório"] == dia].reset_index(drop=True)
 
