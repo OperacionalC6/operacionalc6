@@ -79,7 +79,7 @@ def montar_workbook_sintetico() -> openpyxl.Workbook:
     return wb
 
 
-def fake_baixar(report_name, tile_key, *, filter_query_override=None, filter_value_override=None):
+def fake_baixar(report_name, tile_key, *, filter_query_override=None, filter_value_override=None, sessao=None):
     if report_name == "acompanhamento_veiculos":
         # "Vl Financiamento" vem como TEXTO no formato do Looker (ex.: "R$
         # 2,000.00"), igual ao CSV real baixado em 2026-09-24 — reproduz o

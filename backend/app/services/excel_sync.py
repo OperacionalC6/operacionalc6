@@ -40,13 +40,14 @@ aba — diferente do Excel de verdade, que ajusta fórmulas automaticamente):
 
 import logging
 import re
+from contextlib import contextmanager
 from copy import copy
 from datetime import date, datetime
 
 import pandas as pd
 from openpyxl.formula.translate import Translator
 from openpyxl.worksheet.worksheet import Worksheet
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import Page, sync_playwright
 
 from app.services.connectors.portal_rpa import (
     _BROWSER_PROFILE_DIR,
@@ -84,37 +85,15 @@ def _find_tile_cfg(report_cfg: dict, tile_key: str) -> dict:
     )
 
 
-def baixar_looker_bruto(
-    report_name: str,
-    tile_key: str,
-    *,
-    filter_query_override: str | None = None,
-    filter_value_override: str | None = None,
-) -> pd.DataFrame:
-    """
-    Baixa UMA tile de UM relatório Looker e devolve o DataFrame bruto (todas
-    as colunas do export, sem filtrar nada). Reaproveita o login/bootstrap/
-    download já validados em `PortalRpaConnector` — só troca o que acontece
-    DEPOIS do download (lá vira `ConnectorRecord` filtrado; aqui fica o
-    DataFrame inteiro).
-
-    `filter_query_override`/`filter_value_override`: sobrescreve o filtro de
-    período configurado em `portal_selectors.json` (que é relativo, tipo
-    "3 day"/"2 months") por um filtro de dia/mês EXATO — necessário porque
-    aqui pedimos um dia ou mês específico, não "os últimos N".
-    """
+@contextmanager
+def sessao_looker():
+    """Abre UMA sessão autenticada no portal (login + bootstrap do Looker) e
+    entrega `(connector, page)` pra quem quiser baixar VÁRIAS tiles sem logar
+    de novo a cada uma — passe o resultado pro parâmetro `sessao` de
+    `baixar_looker_bruto`. Usado pelo `--tudo` do CLI: sem isso, atualizar as
+    3 abas de uma vez fazia 3 logins inteiros (um por download), quando dava
+    pra fazer só 1."""
     connector = PortalRpaConnector()
-    report_cfg = dict(_find_report_cfg(connector._config, report_name))
-    tile_cfg = _find_tile_cfg(report_cfg, tile_key)
-    report_cfg["tiles"] = [tile_cfg]  # baixa só a tile pedida, não as outras do mesmo relatório
-
-    if filter_query_override is not None:
-        report_cfg["filter_query"] = filter_query_override
-        report_cfg.pop("filter_param", None)
-        report_cfg.pop("filter_value", None)
-    elif filter_value_override is not None:
-        report_cfg["filter_value"] = filter_value_override
-
     with sync_playwright() as playwright:
         context = playwright.chromium.launch_persistent_context(
             str(_BROWSER_PROFILE_DIR),
@@ -127,12 +106,57 @@ def baixar_looker_bruto(
         try:
             connector._login(page)
             connector._bootstrap_looker_session(page)
-            downloaded = connector._download_looker_tiles(page, report_cfg)
+            yield connector, page
         except Exception:
             connector._save_failure_artifacts(page)
             raise
         finally:
             context.close()
+
+
+def baixar_looker_bruto(
+    report_name: str,
+    tile_key: str,
+    *,
+    filter_query_override: str | None = None,
+    filter_value_override: str | None = None,
+    sessao: tuple[PortalRpaConnector, Page] | None = None,
+) -> pd.DataFrame:
+    """
+    Baixa UMA tile de UM relatório Looker e devolve o DataFrame bruto (todas
+    as colunas do export, sem filtrar nada). Reaproveita o login/bootstrap/
+    download já validados em `PortalRpaConnector` — só troca o que acontece
+    DEPOIS do download (lá vira `ConnectorRecord` filtrado; aqui fica o
+    DataFrame inteiro).
+
+    `filter_query_override`/`filter_value_override`: sobrescreve o filtro de
+    período configurado em `portal_selectors.json` (que é relativo, tipo
+    "3 day"/"2 months") por um filtro de dia/mês EXATO — necessário porque
+    aqui pedimos um dia ou mês específico, não "os últimos N".
+
+    `sessao`: passa `(connector, page)` já logados (ver `sessao_looker`) pra
+    reaproveitar a mesma sessão entre vários downloads numa única execução —
+    se omitido (uso normal, 1 aba isolada), abre e fecha uma sessão só pra
+    esse download.
+    """
+    conector_para_config = sessao[0] if sessao is not None else PortalRpaConnector()
+    report_cfg = dict(_find_report_cfg(conector_para_config._config, report_name))
+    tile_cfg = _find_tile_cfg(report_cfg, tile_key)
+    report_cfg["tiles"] = [tile_cfg]  # baixa só a tile pedida, não as outras do mesmo relatório
+
+    if filter_query_override is not None:
+        report_cfg["filter_query"] = filter_query_override
+        report_cfg.pop("filter_param", None)
+        report_cfg.pop("filter_value", None)
+    elif filter_value_override is not None:
+        report_cfg["filter_value"] = filter_value_override
+
+    if sessao is not None:
+        connector, page = sessao
+        downloaded = connector._download_looker_tiles(page, report_cfg)
+    else:
+        with sessao_looker() as (connector, page):
+            downloaded = connector._download_looker_tiles(page, report_cfg)
 
     file_path, _tile = downloaded[0]
     if file_path.suffix.lower() in (".xlsx", ".xls"):
@@ -309,7 +333,7 @@ def _as_date(v: object) -> date | None:
 # ---------------------------------------------------------------------------
 
 
-def atualizar_db_pagasanalitico(wb, dia: date) -> dict:
+def atualizar_db_pagasanalitico(wb, dia: date, *, sessao: tuple[PortalRpaConnector, Page] | None = None) -> dict:
     ws = wb["db_pagasanalitico"]
     header_row = 1
     mapa = _header_map(ws, header_row)
@@ -354,7 +378,9 @@ def atualizar_db_pagasanalitico(wb, dia: date) -> dict:
         "&S+Cliente=&Gerente+Coordenador+Meta=&Gerente+Neg%C3%B3cios+Meta="
         "&Gerente+Coordenador+Corban=&Gerente+Neg%C3%B3cios+Corban=&Cd+Loja="
     )
-    df = baixar_looker_bruto("acompanhamento_veiculos", "analitico", filter_query_override=filtro)
+    df = baixar_looker_bruto(
+        "acompanhamento_veiculos", "analitico", filter_query_override=filtro, sessao=sessao
+    )
     df["Dt Relatório"] = pd.to_datetime(df["Dt Relatório"]).dt.date
     df = df[df["Dt Relatório"] == dia].reset_index(drop=True)
 
@@ -430,7 +456,9 @@ def _num(v: object) -> float:
 # ---------------------------------------------------------------------------
 
 
-def atualizar_db_apuracaoavista(wb, anomes: str) -> dict:
+def atualizar_db_apuracaoavista(
+    wb, anomes: str, *, sessao: tuple[PortalRpaConnector, Page] | None = None
+) -> dict:
     """`anomes` no formato 'AAAAMM' (ex.: '202609')."""
     ws = wb["db_apuracaoavista"]
     header_row = 1
@@ -463,7 +491,9 @@ def atualizar_db_apuracaoavista(wb, anomes: str) -> dict:
 
     # Baixa ANTES de mexer na planilha (ver mesma nota em atualizar_db_pagasanalitico).
     mes_fmt = f"{anomes[:4]}-{anomes[4:]}"  # "202609" -> "2026-09"
-    df = baixar_looker_bruto("comissao_avista", "analitico", filter_value_override=mes_fmt)
+    df = baixar_looker_bruto(
+        "comissao_avista", "analitico", filter_value_override=mes_fmt, sessao=sessao
+    )
     df["Anomes Apuracao"] = _normalizar_texto_numerico(df["Anomes Apuracao"])
     df = df[df["Anomes Apuracao"] == anomes].reset_index(drop=True)
 
@@ -502,7 +532,9 @@ def atualizar_db_apuracaoavista(wb, anomes: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def atualizar_db_mercado(wb, anomes: str) -> dict:
+def atualizar_db_mercado(
+    wb, anomes: str, *, sessao: tuple[PortalRpaConnector, Page] | None = None
+) -> dict:
     """`anomes` no formato 'AAAAMM' (ex.: '202609'). Sem restrição de "só o
     último bloco" — nenhuma outra aba referencia `db_mercado` por posição."""
     ws = wb["db_mercado"]
@@ -544,7 +576,10 @@ def atualizar_db_mercado(wb, anomes: str) -> dict:
         "&Uf+Loja=&Cidade+Loja=&Bairro+Loja="
     ).format(mes=f"{ano}-{mes:02d}")
     df = baixar_looker_bruto(
-        "painel_visita_mercado", "analitico_mercado_por_loja", filter_query_override=filtro_base
+        "painel_visita_mercado",
+        "analitico_mercado_por_loja",
+        filter_query_override=filtro_base,
+        sessao=sessao,
     )
     df["Mês"] = pd.to_datetime(df["Mês"]).dt.date
     df = df[df["Mês"].apply(lambda d: d.year == ano and d.month == mes)].reset_index(drop=True)

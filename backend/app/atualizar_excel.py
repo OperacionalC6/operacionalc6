@@ -11,11 +11,16 @@ Uso:
 
 `--tudo` roda as 3 abas no período mais recente de cada uma (dia de hoje pra
 db_pagasanalitico, mês corrente pra db_apuracaoavista/db_mercado), nessa
-ordem, e arrasta o base_final no final.
+ordem, e arrasta o base_final no final — faz 1 login só no portal, reaproveitado
+pelos 3 downloads (ver `sessao_looker` em `excel_sync.py`), em vez de logar de
+novo a cada aba.
 
 Sempre que `db_apuracaoavista` for atualizada (isoladamente ou via `--tudo`),
 o script arrasta o `base_final` automaticamente em seguida — é a única aba
 que depende disso (ver docstring de `excel_sync.py`).
+
+Ao salvar, marca a planilha pra recalcular tudo sozinha na próxima vez que
+for aberta no Excel (`fullCalcOnLoad`) — não precisa apertar F9.
 
 A primeira execução pode pedir confirmação manual do portal (verificação de
 dispositivo) se HEADLESS não estiver "false" — rode a primeira vez com:
@@ -39,6 +44,7 @@ from app.services.excel_sync import (
     atualizar_db_apuracaoavista,
     atualizar_db_mercado,
     atualizar_db_pagasanalitico,
+    sessao_looker,
 )
 
 configure_logging()
@@ -100,10 +106,13 @@ def main() -> None:
         if args.tudo:
             hoje = date.today()
             anomes_atual = f"{hoje.year}{hoje.month:02d}"
-            resultados.append(atualizar_db_pagasanalitico(wb, hoje))
-            resultados.append(atualizar_db_apuracaoavista(wb, anomes_atual))
-            precisa_arrastar_base_final = True
-            resultados.append(atualizar_db_mercado(wb, anomes_atual))
+            # 1 login só, reaproveitado pros 3 downloads (ver sessao_looker em
+            # excel_sync.py) — antes disso, --tudo fazia 3 logins inteiros.
+            with sessao_looker() as sessao:
+                resultados.append(atualizar_db_pagasanalitico(wb, hoje, sessao=sessao))
+                resultados.append(atualizar_db_apuracaoavista(wb, anomes_atual, sessao=sessao))
+                precisa_arrastar_base_final = True
+                resultados.append(atualizar_db_mercado(wb, anomes_atual, sessao=sessao))
         elif args.aba == "db_pagasanalitico":
             resultados.append(atualizar_db_pagasanalitico(wb, args.dia))
         elif args.aba == "db_apuracaoavista":
@@ -123,6 +132,13 @@ def main() -> None:
     except Exception:
         logger.exception("Erro inesperado — o arquivo NÃO foi salvo (o backup, se feito, está intacto).")
         sys.exit(1)
+
+    # openpyxl só escreve o TEXTO da fórmula, não recalcula nada — sem isso o
+    # Excel abre mostrando o último valor calculado antes da nossa alteração
+    # (errado) até o usuário apertar F9 manualmente. fullCalcOnLoad pede pro
+    # Excel recalcular tudo automaticamente assim que o arquivo for aberto,
+    # mesmo que o workbook esteja em modo de cálculo manual.
+    wb.calculation.fullCalcOnLoad = True
 
     wb.save(caminho)
     logger.info("Planilha salva: %s", caminho)
