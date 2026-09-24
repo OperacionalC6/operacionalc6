@@ -566,6 +566,85 @@ os componentes de gráfico (`next dev` + Playwright headless, screenshot salvo e
 antes de finalizar — não ficou no repo. **Ainda NÃO testado contra dado real de produção** — falta o
 usuário abrir `/dashboard/resumo` de verdade e conferir números/visual.
 
+## PIVÔ DE ARQUITETURA (2026-09-24): infra de nuvem desativada, virou automação local em Excel
+
+**Isto muda o "estado atual" de toda a seção acima** — Render/Vercel/GCP foram **desativados
+deliberadamente pelo usuário** (decisão de negócio: reduzir custo, ele decidiu não precisar mais do
+painel web por enquanto). O código do app web (backend FastAPI+Postgres, frontend Next.js) continua
+no repo, documentado, mas **não está mais rodando em lugar nenhum** — não redeployar nada disso sem
+o usuário pedir explicitamente.
+
+**O que foi desativado, na ordem, com backup feito antes:**
+1. Backup do Postgres do Render via **Recovery → Export** (backup lógico completo, baixado pro
+   computador do usuário antes de qualquer exclusão).
+2. Banco Postgres (`operacionalc6-db`) deletado no Render.
+3. Web Service (backend) deletado no Render.
+4. Projeto do frontend deletado na Vercel.
+5. Projeto do Google Cloud (OAuth Client do login) — usuário confirmou que podia apagar o projeto
+   inteiro (não só o credential), sem outras coisas configuradas nele.
+6. GitHub (organização `OperacionalC6` + repositório) — **mantido**, usuário decidiu não apagar
+   ("Melhor, não vamos deletar por enquanto"). O trabalho continua neste mesmo repo.
+
+**Novo objetivo do projeto**: em vez de um dashboard web, uma automação Python **local** (roda na
+máquina do usuário, nunca na nuvem) que atualiza o `Construcao.xlsx` original do usuário direto a
+partir do Looker — usuário volta a usar o Excel como interface principal, mas sem precisar mais
+atualizar manualmente copiando/colando do Looker.
+
+**Arquitetura da automação** (`backend/app/services/excel_sync.py` +
+`backend/app/atualizar_excel.py`, CLI):
+- Reaproveita o login/navegação/download do RPA já validado (`PortalRpaConnector` — `_login`,
+  `_bootstrap_looker_session`, `_download_looker_tiles`), mas NÃO usa `_parse_report`/`ConnectorRecord`
+  (que filtra só as `dimension_columns` configuradas pro app web) — baixa o DataFrame bruto INTEIRO
+  (todas as colunas do export, inclusive PII como Cpf/Nm Cliente que o app web deliberadamente não
+  guardava), porque é isso que já está na planilha do usuário.
+- Descoberta real inspecionando a planilha atual (bem diferente da que foi inspecionada em
+  2026-09-03/04 — o usuário reestruturou bastante nesse meio tempo): `db_pagasanalitico` e
+  `db_mercado` têm colunas DERIVADAS (fórmula) ANTES das colunas brutas do Looker (ex.:
+  `db_pagasanalitico` tem 12 colunas de fórmula A:L — ANO, MÊS, CHAVE_CONTRATO, AREA_LOJA_EHS etc. —
+  antes da coluna bruta M "ID Proposta"). Ao inserir linha nova, essas fórmulas são "arrastadas" com
+  `openpyxl.formula.translate.Translator` (mesmo mecanismo que o Excel usa ao arrastar a alcinha) —
+  testado contra os padrões reais de fórmula antes de usar.
+- **`base_final` não é mais um cálculo em Python** (diferente da Fase 2/3 do app web) — voltou a ser
+  as fórmulas originais do próprio Excel do usuário. A automação só "arrasta" as fórmulas de
+  `base_final` pra acompanhar o crescimento de `db_apuracaoavista` (`arrastar_base_final`).
+- **Duas restrições de segurança**, as duas por causa de como o `openpyxl` mexe em linha (NÃO
+  reescreve texto de fórmula ao inserir/apagar linha no meio de uma aba, diferente do Excel de
+  verdade): (1) toda atualização só mexe no BLOCO FINAL (mais recente) de cada aba, nunca no meio —
+  recusa com `AtualizacaoRecusada` se o dia/mês pedido não estiver colado no final; (2)
+  `db_apuracaoavista` tem uma restrição a mais porque `base_final` a referencia por POSIÇÃO de linha
+  (não por XLOOKUP) — confirmado inspecionando fórmula real (`base_final!O3974 =
+  "=db_apuracaoavista!F3973"`, deslocamento de +1 sempre) — só pode ser atualizada no mês mais
+  recente. `db_pagasanalitico`/`db_mercado` não têm essa segunda restrição (referenciadas por XLOOKUP
+  em coluna inteira, que não liga pra posição).
+- **Escopo inicial, 3 abas** (todas já mapeadas no RPA existente, sem selector novo):
+  `db_pagasanalitico` (grão dia, `acompanhamento_veiculos`/analítico), `db_apuracaoavista` (grão mês,
+  `comissao_avista`/analítico), `db_mercado` (grão mês, `painel_visita_mercado`/analítico mercado por
+  loja).
+- CLI: `python -m app.atualizar_excel --planilha <caminho> --aba <nome> --dia/--mes <valor>`, ou
+  `--tudo` pra rodar as 3 no período mais recente de cada uma + arrastar `base_final` no final.
+  Sempre faz backup do arquivo antes de mexer (a menos que `--sem-backup`).
+- **Testado no sandbox** (`app/services/_test_excel_sync_manual.py`, roda com
+  `python -m app.services._test_excel_sync_manual`) contra um workbook SINTÉTICO reproduzindo a
+  estrutura real (com `baixar_looker_bruto` substituído por dado fake) — cobre inserção de linha
+  nova, arrastar fórmula, substituição do bloco final (dia rodado 2x), sincronia do `base_final`, e a
+  recusa de segurança quando o período pedido está fora de ordem. Todos os cenários passam. **Ainda
+  NÃO testado contra o portal/planilha reais** — a parte mais arriscada e não verificável do sandbox é
+  o `filter_query`/`filter_value` que cada `atualizar_*` monta pra pedir um dia/mês EXATO do Looker
+  (diferente do filtro relativo "3 day"/"2 months" já usado no app web) — construído por analogia com
+  os filtros já validados, mas nunca testado ao vivo. Rodar a primeira vez com `HEADLESS=false` (igual
+  já se faz pra qualquer seletor novo, ver skill `rpa-conventions`) e ajustar se o filtro não trouxer
+  o período certo.
+- **Checks pedidos pelo usuário**: (a) `db_apuracaoavista` — contagem do mês batendo com
+  "PROPOSTA PAGA" do mesmo mês em `db_pagasanalitico` — **totalmente automatizado** (lê os dois
+  direto da planilha, sem precisar de tile nova); (b) `db_pagasanalitico` — contagem por dia batendo
+  com o gráfico "Digitação x Dia" do Looker, e soma de `Vl Financiamento` (PROPOSTA PAGA) batendo com
+  "(R$) Produção" da aba Produção — **NÃO totalmente automatizado ainda** (esses dois números vêm de
+  tiles do Looker que não estão mapeadas em `portal_selectors.json`; a automação calcula e IMPRIME os
+  números pra conferência visual rápida contra a tela do Looker, mas não busca o valor de referência
+  sozinha — precisaria mapear 1-2 tiles novas, mesmo processo já usado pras outras, se o usuário
+  quiser automatizar isso também depois); (c) `db_mercado` — quantidade registrada bate com
+  quantidade baixada — **totalmente automatizado** (recontagem real pós-escrita, não uma tautologia).
+
 ## Como uma sessão nova deve retomar
 
 1. Ler esta skill primeiro.
