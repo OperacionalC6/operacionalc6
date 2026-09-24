@@ -43,6 +43,7 @@ import re
 from contextlib import contextmanager
 from copy import copy
 from datetime import date, datetime
+from pathlib import Path
 
 import pandas as pd
 from openpyxl.formula.translate import Translator
@@ -50,6 +51,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from playwright.sync_api import Page, sync_playwright
 
 from app.services.connectors.portal_rpa import (
+    _ARTIFACTS_DIR,
     _BROWSER_PROFILE_DIR,
     _HEADLESS,
     PortalRpaConnector,
@@ -57,6 +59,8 @@ from app.services.connectors.portal_rpa import (
 )
 
 logger = logging.getLogger(__name__)
+
+_EVIDENCIAS_DIR = _ARTIFACTS_DIR / "evidencias"
 
 
 class AtualizacaoRecusada(RuntimeError):
@@ -114,6 +118,18 @@ def sessao_looker():
             context.close()
 
 
+def _tirar_print_evidencia(page: Page, report_name: str) -> Path:
+    """Print de tela do dashboard Looker logo depois do filtro aplicado e
+    renderizado (mesmo estado que gerou os dados baixados) — serve de
+    evidência visual pro relatório de atualização, pra conferir que o número
+    baixado bate com o que o Looker mostra na tela."""
+    _EVIDENCIAS_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dest = _EVIDENCIAS_DIR / f"{report_name}_{timestamp}.png"
+    page.screenshot(path=str(dest), full_page=True)
+    return dest
+
+
 def baixar_looker_bruto(
     report_name: str,
     tile_key: str,
@@ -121,6 +137,7 @@ def baixar_looker_bruto(
     filter_query_override: str | None = None,
     filter_value_override: str | None = None,
     sessao: tuple[PortalRpaConnector, Page] | None = None,
+    evidencias: list[Path] | None = None,
 ) -> pd.DataFrame:
     """
     Baixa UMA tile de UM relatório Looker e devolve o DataFrame bruto (todas
@@ -138,6 +155,10 @@ def baixar_looker_bruto(
     reaproveitar a mesma sessão entre vários downloads numa única execução —
     se omitido (uso normal, 1 aba isolada), abre e fecha uma sessão só pra
     esse download.
+
+    `evidencias`: lista mutável — se passada, um print da tela do dashboard
+    (ver `_tirar_print_evidencia`) é tirado logo após o download e o caminho
+    do arquivo é adicionado nela (usado pra montar o relatório final).
     """
     conector_para_config = sessao[0] if sessao is not None else PortalRpaConnector()
     report_cfg = dict(_find_report_cfg(conector_para_config._config, report_name))
@@ -154,9 +175,13 @@ def baixar_looker_bruto(
     if sessao is not None:
         connector, page = sessao
         downloaded = connector._download_looker_tiles(page, report_cfg)
+        if evidencias is not None:
+            evidencias.append(_tirar_print_evidencia(page, report_name))
     else:
         with sessao_looker() as (connector, page):
             downloaded = connector._download_looker_tiles(page, report_cfg)
+            if evidencias is not None:
+                evidencias.append(_tirar_print_evidencia(page, report_name))
 
     file_path, _tile = downloaded[0]
     if file_path.suffix.lower() in (".xlsx", ".xls"):
@@ -333,7 +358,13 @@ def _as_date(v: object) -> date | None:
 # ---------------------------------------------------------------------------
 
 
-def atualizar_db_pagasanalitico(wb, dia: date, *, sessao: tuple[PortalRpaConnector, Page] | None = None) -> dict:
+def atualizar_db_pagasanalitico(
+    wb,
+    dia: date,
+    *,
+    sessao: tuple[PortalRpaConnector, Page] | None = None,
+    evidencias: list[Path] | None = None,
+) -> dict:
     ws = wb["db_pagasanalitico"]
     header_row = 1
     mapa = _header_map(ws, header_row)
@@ -379,7 +410,11 @@ def atualizar_db_pagasanalitico(wb, dia: date, *, sessao: tuple[PortalRpaConnect
         "&Gerente+Coordenador+Corban=&Gerente+Neg%C3%B3cios+Corban=&Cd+Loja="
     )
     df = baixar_looker_bruto(
-        "acompanhamento_veiculos", "analitico", filter_query_override=filtro, sessao=sessao
+        "acompanhamento_veiculos",
+        "analitico",
+        filter_query_override=filtro,
+        sessao=sessao,
+        evidencias=evidencias,
     )
     df["Dt Relatório"] = pd.to_datetime(df["Dt Relatório"]).dt.date
     df = df[df["Dt Relatório"] == dia].reset_index(drop=True)
@@ -457,9 +492,14 @@ def _num(v: object) -> float:
 
 
 def atualizar_db_apuracaoavista(
-    wb, anomes: str, *, sessao: tuple[PortalRpaConnector, Page] | None = None
+    wb,
+    anomes: str,
+    *,
+    sessao: tuple[PortalRpaConnector, Page] | None = None,
+    evidencias: list[Path] | None = None,
 ) -> dict:
     """`anomes` no formato 'AAAAMM' (ex.: '202609')."""
+
     ws = wb["db_apuracaoavista"]
     header_row = 1
     mapa = _header_map(ws, header_row)
@@ -492,7 +532,11 @@ def atualizar_db_apuracaoavista(
     # Baixa ANTES de mexer na planilha (ver mesma nota em atualizar_db_pagasanalitico).
     mes_fmt = f"{anomes[:4]}-{anomes[4:]}"  # "202609" -> "2026-09"
     df = baixar_looker_bruto(
-        "comissao_avista", "analitico", filter_value_override=mes_fmt, sessao=sessao
+        "comissao_avista",
+        "analitico",
+        filter_value_override=mes_fmt,
+        sessao=sessao,
+        evidencias=evidencias,
     )
     df["Anomes Apuracao"] = _normalizar_texto_numerico(df["Anomes Apuracao"])
     df = df[df["Anomes Apuracao"] == anomes].reset_index(drop=True)
@@ -533,7 +577,11 @@ def atualizar_db_apuracaoavista(
 
 
 def atualizar_db_mercado(
-    wb, anomes: str, *, sessao: tuple[PortalRpaConnector, Page] | None = None
+    wb,
+    anomes: str,
+    *,
+    sessao: tuple[PortalRpaConnector, Page] | None = None,
+    evidencias: list[Path] | None = None,
 ) -> dict:
     """`anomes` no formato 'AAAAMM' (ex.: '202609'). Sem restrição de "só o
     último bloco" — nenhuma outra aba referencia `db_mercado` por posição."""
@@ -580,6 +628,7 @@ def atualizar_db_mercado(
         "analitico_mercado_por_loja",
         filter_query_override=filtro_base,
         sessao=sessao,
+        evidencias=evidencias,
     )
     df["Mês"] = pd.to_datetime(df["Mês"]).dt.date
     df = df[df["Mês"].apply(lambda d: d.year == ano and d.month == mes)].reset_index(drop=True)

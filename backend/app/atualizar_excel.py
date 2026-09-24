@@ -46,6 +46,7 @@ from app.services.excel_sync import (
     atualizar_db_pagasanalitico,
     sessao_looker,
 )
+from app.services.relatorio_checks import gerar_relatorio
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -58,12 +59,12 @@ def _backup(caminho: Path) -> Path:
     return destino
 
 
-def _imprimir_resultado(res: dict) -> None:
-    print(f"\n--- {res['aba']} ({res.get('periodo', '')}) ---")
-    for chave, valor in res.items():
-        if chave in ("aba", "periodo"):
-            continue
-        print(f"  {chave}: {valor}")
+def _salvar_relatorio(caminho_planilha: Path, texto: str) -> Path:
+    destino = caminho_planilha.with_name(
+        f"{caminho_planilha.stem}_relatorio_{datetime.now():%Y%m%d_%H%M%S}.txt"
+    )
+    destino.write_text(texto, encoding="utf-8")
+    return destino
 
 
 def main() -> None:
@@ -100,6 +101,7 @@ def main() -> None:
 
     wb = openpyxl.load_workbook(caminho, data_only=False)
     resultados: list[dict] = []
+    evidencias: list[Path] = []
     precisa_arrastar_base_final = False
 
     try:
@@ -109,19 +111,21 @@ def main() -> None:
             # 1 login só, reaproveitado pros 3 downloads (ver sessao_looker em
             # excel_sync.py) — antes disso, --tudo fazia 3 logins inteiros.
             with sessao_looker() as sessao:
-                resultados.append(atualizar_db_pagasanalitico(wb, hoje, sessao=sessao))
-                resultados.append(atualizar_db_apuracaoavista(wb, anomes_atual, sessao=sessao))
+                resultados.append(atualizar_db_pagasanalitico(wb, hoje, sessao=sessao, evidencias=evidencias))
+                resultados.append(
+                    atualizar_db_apuracaoavista(wb, anomes_atual, sessao=sessao, evidencias=evidencias)
+                )
                 precisa_arrastar_base_final = True
-                resultados.append(atualizar_db_mercado(wb, anomes_atual, sessao=sessao))
+                resultados.append(atualizar_db_mercado(wb, anomes_atual, sessao=sessao, evidencias=evidencias))
         elif args.aba == "db_pagasanalitico":
-            resultados.append(atualizar_db_pagasanalitico(wb, args.dia))
+            resultados.append(atualizar_db_pagasanalitico(wb, args.dia, evidencias=evidencias))
         elif args.aba == "db_apuracaoavista":
             anomes = args.mes.replace("-", "")
-            resultados.append(atualizar_db_apuracaoavista(wb, anomes))
+            resultados.append(atualizar_db_apuracaoavista(wb, anomes, evidencias=evidencias))
             precisa_arrastar_base_final = True
         elif args.aba == "db_mercado":
             anomes = args.mes.replace("-", "")
-            resultados.append(atualizar_db_mercado(wb, anomes))
+            resultados.append(atualizar_db_mercado(wb, anomes, evidencias=evidencias))
 
         if precisa_arrastar_base_final:
             resultados.append(arrastar_base_final(wb))
@@ -143,8 +147,10 @@ def main() -> None:
     wb.save(caminho)
     logger.info("Planilha salva: %s", caminho)
 
-    for res in resultados:
-        _imprimir_resultado(res)
+    relatorio = gerar_relatorio(resultados, evidencias)
+    print(relatorio)
+    caminho_relatorio = _salvar_relatorio(caminho, relatorio)
+    logger.info("Relatório salvo em: %s", caminho_relatorio)
 
 
 if __name__ == "__main__":
