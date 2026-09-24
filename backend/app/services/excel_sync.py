@@ -50,6 +50,7 @@ from app.services.connectors.portal_rpa import (
     _BROWSER_PROFILE_DIR,
     _HEADLESS,
     PortalRpaConnector,
+    _accept_dialog_logged,
 )
 
 logger = logging.getLogger(__name__)
@@ -120,7 +121,7 @@ def baixar_looker_bruto(
             args=["--disable-save-password-bubble"],
         )
         page = context.pages[0] if context.pages else context.new_page()
-        page.on("dialog", lambda dialog: dialog.accept())
+        page.on("dialog", _accept_dialog_logged)
         try:
             connector._login(page)
             connector._bootstrap_looker_session(page)

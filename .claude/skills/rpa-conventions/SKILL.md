@@ -260,6 +260,25 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     assumir que aquela janela serve pra todo uso futuro do dado nem que dá pra simplesmente
     alargá-la — primeiro confirmar limites de plataforma (linhas por export) contra o volume real.
 
+27. **`page.on("dialog", lambda dialog: dialog.accept())` aceita QUALQUER dialog nativo sem logar a
+    mensagem — inclusive um `alert()` de erro de validação, que fica completamente invisível.**
+    Descoberto em produção (2026-09-24, depurando por que o login de `excel_sync.py` sempre travava
+    60s e estourava timeout sem nenhuma pista): o formulário de login do WebAutorizador usa
+    `ValidationSummary` do ASP.NET com `ShowMessageBox="True"` — erros de validação de campo (ex.:
+    "O conteúdo do campo Senha é de preenchimento obrigatório.") aparecem via `alert()` JS nativo, não
+    como texto na página. Como o handler de dialog aceitava tudo cegamente (necessário pro
+    `confirm()` de "já autenticado em outra estação", ver item 4), a mensagem real do erro nunca
+    chegava a lugar nenhum — só sobrava um timeout genérico de 60s. Corrigido: `_accept_dialog_logged`
+    (substituiu a lambda em `portal_rpa.py` E em `excel_sync.py`) loga `dialog.type`/`dialog.message`
+    antes de aceitar — continua aceitando tudo (não vamos deixar um dialog sem resposta, ver "Linha
+    que não se cruza"), só passa a deixar rastro. Também descoberto no mesmo incidente: o campo de
+    senha tem uma checagem de "caracteres perigosos" no blur (`ValidacaoDeCaracteresPerigosos`) que
+    pode limpar o valor silenciosamente — `_login` agora confere `page.input_value(password_selector)`
+    logo depois do `.fill()` e levanta um erro claro na hora se vier vazio, em vez de deixar isso pra
+    ser descoberto só depois do timeout de 60s. Lição geral: **todo handler de dialog "aceita tudo"
+    precisa logar antes de aceitar** — é o único jeito de ver o texto de um erro que só existe como
+    `alert()`, nunca como elemento de página.
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por

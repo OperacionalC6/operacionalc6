@@ -59,6 +59,24 @@ class PortalLoginError(RuntimeError):
     pass
 
 
+def _accept_dialog_logged(dialog) -> None:
+    """
+    Aceita qualquer dialog nativo (confirm()/alert()) igual sempre fizemos —
+    mas agora LOGANDO a mensagem antes. Descoberto em produção (2026-09-24,
+    ver skill `rpa-conventions`): o `ValidationSummary` do ASP.NET do
+    WebAutorizador mostra erro de validação (ex.: campo obrigatório, ou o
+    filtro de "caracteres perigosos" da senha) via `alert()` nativo — o
+    handler antigo aceitava esse alert SEM LER, então a mensagem real do erro
+    nunca aparecia em lugar nenhum, e o login só estourava um timeout genérico
+    de 60s sem pista nenhuma do motivo de verdade. Não muda o comportamento
+    (ainda aceita tudo, igual sempre — ver "Linha que não se cruza" na skill
+    rpa-conventions, não vamos deixar um dialog sem resposta), só passa a
+    registrar o texto pra debug futuro ser imediato em vez de arqueológico.
+    """
+    logger.info("Dialog nativo do navegador (%s): %r — aceitando.", dialog.type, dialog.message)
+    dialog.accept()
+
+
 class PortalRpaConnector(DataConnector):
     source_name = "portal_rpa"
 
@@ -103,8 +121,11 @@ class PortalRpaConnector(DataConnector):
             # perguntar "Usuário já autenticado em outra estação, desconectar?"
             # quando sobra uma sessão anterior — sem isso, o login trava
             # esperando uma resposta que nunca chega. Aceitar equivale a
-            # clicar "Sim" nesse popup, igual um humano faria.
-            page.on("dialog", lambda dialog: dialog.accept())
+            # clicar "Sim" nesse popup, igual um humano faria. Loga a mensagem
+            # antes de aceitar (ver `_accept_dialog_logged`) — sem isso, um
+            # alert() de validação (ex.: senha rejeitada) passa batido, sem
+            # deixar rastro nenhum de qual foi o erro real.
+            page.on("dialog", _accept_dialog_logged)
             try:
                 self._login(page)
                 for report_cfg in self._config["reports"]:
@@ -184,6 +205,22 @@ class PortalRpaConnector(DataConnector):
 
         page.fill(login_cfg["username_selector"], settings.c6_portal_username)
         page.fill(login_cfg["password_selector"], settings.c6_portal_password)
+
+        # Confere que a senha realmente "colou" no campo — achado em produção
+        # (2026-09-24, ver skill rpa-conventions): o campo de senha do
+        # WebAutorizador tem uma checagem de "caracteres perigosos" no blur
+        # (`ValidacaoDeCaracteresPerigosos`) que pode limpar o valor
+        # silenciosamente; sem essa conferência, o script só descobre isso
+        # depois de esperar o timeout de 60s inteiro lá embaixo, sem pista
+        # nenhuma do motivo real.
+        senha_no_campo = page.input_value(login_cfg["password_selector"])
+        if not senha_no_campo:
+            raise PortalLoginError(
+                "O campo de senha ficou vazio logo depois de preenchido — o portal pode "
+                "estar rejeitando algum caractere da senha (ver 'caracteres perigosos' no "
+                "HTML do formulário) ou houve algum problema ao digitar. Confira se a senha "
+                "em C6_PORTAL_PASSWORD tem símbolos incomuns e considere testar uma sem eles."
+            )
 
         if login_cfg.get("totp_selector") and settings.c6_portal_totp_secret:
             code = pyotp.TOTP(settings.c6_portal_totp_secret).now()
