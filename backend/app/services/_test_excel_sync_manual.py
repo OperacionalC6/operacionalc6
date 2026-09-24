@@ -76,12 +76,18 @@ def fake_baixar(report_name, tile_key, *, filter_query_override=None, filter_val
             "Vl Financiamento": [2000.0, 3000.0],
         })
     if report_name == "comissao_avista":
+        # Reproduz o bug real encontrado em 2026-09-24: o CSV baixado do Looker
+        # tinha uma linha de rodapé/total com "Anomes Apuracao" vazio, o que
+        # promove a coluna inteira pra float64 (202609 -> 202609.0) — daí um
+        # `.astype(str)` ingênuo gerava "202609.0" e nunca batia com "202609"
+        # (430 linhas baixadas, 0 batendo). Aqui simulamos exatamente isso:
+        # valores float com .0 de sobra, mais uma linha de rodapé com NaN.
         return pd.DataFrame({
-            "Anomes Apuracao": ["202609", "202609"],
-            "Cd Contrato": ["AU200", "AU201"],
-            "Status Contrato": ["Ativo", "Ativo"],
-            "Lojista": ["30 - Z - 333", "30 - Z - 333"],
-            "R$ Principal Total": [7000.0, 8000.0],
+            "Anomes Apuracao": [202609.0, 202609.0, float("nan")],
+            "Cd Contrato": ["AU200", "AU201", None],
+            "Status Contrato": ["Ativo", "Ativo", None],
+            "Lojista": ["30 - Z - 333", "30 - Z - 333", None],
+            "R$ Principal Total": [7000.0, 8000.0, 15000.0],
         })
     if report_name == "painel_visita_mercado":
         return pd.DataFrame({

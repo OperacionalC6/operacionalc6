@@ -336,6 +336,28 @@ def atualizar_db_pagasanalitico(wb, dia: date) -> dict:
     }
 
 
+def _normalizar_texto_numerico(serie: pd.Series) -> pd.Series:
+    """Normaliza uma coluna que deveria ser texto (ex.: "Anomes Apuracao",
+    comparada por igualdade exata de string) mas que o pandas pode ter lido
+    como float64 — típico quando o CSV/Excel baixado do Looker tem alguma
+    célula vazia nessa coluna (ex.: linha de total/rodapé), o que promove a
+    coluna INTEIRA pra float64: um valor como 202609 vira 202609.0, e
+    `.astype(str)` gera "202609.0" em vez de "202609", quebrando silenciosamente
+    qualquer comparação de string exata (foi exatamente isso que zerou o
+    resultado no primeiro teste real contra o portal em 2026-09-24: 430 linhas
+    baixadas, 0 batendo com "202609"). NaN vira string vazia (nunca bate com
+    nada — não queremos escrever uma linha de total/rodapé como se fosse dado)."""
+
+    def normalizar(v: object) -> str:
+        if pd.isna(v):
+            return ""
+        if isinstance(v, float) and v.is_integer():
+            return str(int(v))
+        return str(v).strip()
+
+    return serie.map(normalizar)
+
+
 def _num(v: object) -> float:
     from app.services.connectors.base import parse_looker_number
 
@@ -391,7 +413,7 @@ def atualizar_db_apuracaoavista(wb, anomes: str) -> dict:
     # Baixa ANTES de mexer na planilha (ver mesma nota em atualizar_db_pagasanalitico).
     mes_fmt = f"{anomes[:4]}-{anomes[4:]}"  # "202609" -> "2026-09"
     df = baixar_looker_bruto("comissao_avista", "analitico", filter_value_override=mes_fmt)
-    df["Anomes Apuracao"] = df["Anomes Apuracao"].astype(str)
+    df["Anomes Apuracao"] = _normalizar_texto_numerico(df["Anomes Apuracao"])
     df = df[df["Anomes Apuracao"] == anomes].reset_index(drop=True)
 
     if bloco is not None:
