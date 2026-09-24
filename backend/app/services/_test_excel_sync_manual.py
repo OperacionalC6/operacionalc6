@@ -8,10 +8,12 @@ Roda com: python -m app.services._test_excel_sync_manual
 """
 
 import sys
+from copy import copy
 from datetime import date, datetime
 
 import openpyxl
 import pandas as pd
+from openpyxl.styles import Font, PatternFill
 
 sys.path.insert(0, ".")
 
@@ -40,10 +42,18 @@ def montar_workbook_sintetico() -> openpyxl.Workbook:
         "=YEAR(N2)", "=MONTH(N2)", '=AC2&"."&S2', "=1", "=2", "=3", "=4", "=5", "=6", "=7", "=8", "=9",
         1001, datetime(2026, 9, 20), "10 - X - 111", "PROPOSTA PAGA", "AU001", 1000.0,
     ])
-    # Formatação real (moeda) na linha-modelo — pra testar se a linha nova
-    # herda o number_format, não só o valor.
+    # Formatação real (moeda + fonte em negrito + fundo colorido) na
+    # linha-modelo — pra testar se a linha nova herda o ESTILO completo, não
+    # só o valor (achado real em 2026-09-24: 1ª correção só copiava
+    # number_format, usuário reportou que fonte/cor ainda ficavam default).
     col_vl_financiamento = header.index("Vl Financiamento") + 1
-    ws.cell(row=2, column=col_vl_financiamento).number_format = "R$ #,##0.00"
+    cel_modelo = ws.cell(row=2, column=col_vl_financiamento)
+    cel_modelo.number_format = "R$ #,##0.00"
+    cel_modelo.font = Font(bold=True, color="FF0000")
+    cel_modelo.fill = PatternFill("solid", fgColor="FFFF00")
+    # Mesma ideia numa coluna de FÓRMULA (ANO, col 1) — testa se `_arrastar_linha`
+    # também copia estilo, não só `_escrever_linhas_brutas`.
+    ws.cell(row=2, column=1).fill = PatternFill("solid", fgColor="00FF00")
 
     # --- db_apuracaoavista: só colunas brutas ---
     ws = wb.create_sheet("db_apuracaoavista")
@@ -122,23 +132,37 @@ def main():
     assert formula_ano_linha3 == "=YEAR(N3)", f"fórmula ANO não arrastou certo: {formula_ano_linha3!r}"
     formula_chave_linha4 = ws.cell(row=4, column=3).value
     assert formula_chave_linha4 == '=AC4&"."&S4', f"fórmula CHAVE_CONTRATO não arrastou certo: {formula_chave_linha4!r}"
-    print("  OK: linhas inseridas e fórmulas arrastadas corretamente.\n")
+    # `cell.fill` devolve um StyleProxy sem __eq__ de verdade (compara sempre
+    # False mesmo com conteúdo idêntico) — copy() desembrulha pro PatternFill
+    # real, que aí sim compara por valor.
+    assert copy(ws.cell(row=3, column=1).fill) == copy(ws.cell(row=2, column=1).fill), (
+        "cor de fundo da coluna de fórmula (ANO) não foi copiada pra linha nova"
+    )
+    print("  OK: linhas inseridas, fórmulas arrastadas e estilo da coluna de fórmula copiado.\n")
 
-    print("== conferindo normalização de valor monetário + number_format (bug real 2026-09-24) ==")
+    print("== conferindo normalização de valor monetário + estilo completo (bug real 2026-09-24) ==")
     col_vl_financiamento = 18  # "Vl Financiamento" é a 6ª coluna bruta, após 12 de fórmula (12+6=18)
-    valor_linha3 = ws.cell(row=3, column=col_vl_financiamento).value
+    cel_modelo = ws.cell(row=2, column=col_vl_financiamento)
+    cel_linha3 = ws.cell(row=3, column=col_vl_financiamento)
+    valor_linha3 = cel_linha3.value
     assert isinstance(valor_linha3, float), (
         f"'Vl Financiamento' devia ter virado float (era 'R$ 2,000.00' baixado como texto), "
         f"veio {type(valor_linha3).__name__}: {valor_linha3!r}"
     )
     assert valor_linha3 == 2000.0, f"valor convertido errado: {valor_linha3!r}"
-    fmt_modelo = ws.cell(row=2, column=col_vl_financiamento).number_format
-    fmt_linha3 = ws.cell(row=3, column=col_vl_financiamento).number_format
-    assert fmt_linha3 == fmt_modelo, (
-        f"number_format não foi copiado da linha-modelo pra linha nova: "
-        f"modelo={fmt_modelo!r}, linha nova={fmt_linha3!r}"
+    assert cel_linha3.number_format == cel_modelo.number_format, (
+        f"number_format não foi copiado: modelo={cel_modelo.number_format!r}, linha nova={cel_linha3.number_format!r}"
     )
-    print(f"  OK: 'R$ 2,000.00' virou {valor_linha3!r} (float) e number_format {fmt_linha3!r} copiado da linha-modelo.\n")
+    assert copy(cel_linha3.font) == copy(cel_modelo.font), (
+        f"fonte não foi copiada: modelo={cel_modelo.font!r}, linha nova={cel_linha3.font!r}"
+    )
+    assert copy(cel_linha3.fill) == copy(cel_modelo.fill), (
+        f"cor de fundo não foi copiada: modelo={cel_modelo.fill!r}, linha nova={cel_linha3.fill!r}"
+    )
+    print(
+        f"  OK: 'R$ 2,000.00' virou {valor_linha3!r} (float), e number_format/fonte/fundo "
+        "copiados da linha-modelo.\n"
+    )
 
     print("== atualizar_db_apuracaoavista (mês 202609) ==")
     res = atualizar_db_apuracaoavista(wb, "202609")

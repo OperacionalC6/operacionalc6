@@ -40,6 +40,7 @@ aba — diferente do Excel de verdade, que ajusta fórmulas automaticamente):
 
 import logging
 import re
+from copy import copy
 from datetime import date, datetime
 
 import pandas as pd
@@ -175,14 +176,25 @@ def _colunas_formula(ws: Worksheet, linha_modelo: int, max_col: int) -> list[int
     return cols
 
 
-def _copiar_number_format(ws: Worksheet, linha_modelo: int, linha_destino: int, col: int) -> None:
-    """Copia o `number_format` (moeda/%/data/etc.) da linha-modelo pra célula
-    nova. Sem isso, célula nova criada além do `max_row` anterior nasce com
-    formatação "General" (moeda vira número cru sem 'R$', data vira serial
-    numérico) mesmo que o VALOR esteja certo — achado real em 2026-09-24: o
-    código nunca copiava estilo nenhum, nem aqui nem em `_escrever_linhas_brutas`."""
+def _copiar_estilo(ws: Worksheet, linha_modelo: int, linha_destino: int, col: int) -> None:
+    """Copia o ESTILO completo da célula-modelo pra célula nova: number_format
+    (moeda/%/data/etc.), fonte, cor de fundo, borda e alinhamento. Sem isso,
+    célula nova criada além do `max_row` anterior nasce com o estilo padrão
+    "General"/sem formatação nenhuma — mesmo com o VALOR certo (achado real em
+    2026-09-24: o código não copiava estilo nenhum, nem aqui nem em
+    `_escrever_linhas_brutas`; a 1ª correção só copiou number_format, mas
+    fonte/cor/borda/alinhamento ainda ficavam default). Precisa de `copy.copy()`
+    em cada objeto de estilo — `cell.font` etc. devolvem um proxy vinculado à
+    célula de origem, e o openpyxl recusa (`TypeError: unhashable type:
+    'StyleProxy'`) se a mesma instância for atribuída direto a outra célula."""
     origem = ws.cell(row=linha_modelo, column=col)
-    ws.cell(row=linha_destino, column=col).number_format = origem.number_format
+    destino = ws.cell(row=linha_destino, column=col)
+    destino.number_format = origem.number_format
+    destino.font = copy(origem.font)
+    destino.fill = copy(origem.fill)
+    destino.border = copy(origem.border)
+    destino.alignment = copy(origem.alignment)
+    destino.protection = copy(origem.protection)
 
 
 def _arrastar_linha(
@@ -197,7 +209,7 @@ def _arrastar_linha(
         ws.cell(row=linha_destino, column=col).value = Translator(
             formula, origin=origem_coord
         ).translate_formula(destino_coord)
-        _copiar_number_format(ws, linha_modelo, linha_destino, col)
+        _copiar_estilo(ws, linha_modelo, linha_destino, col)
 
 
 def _ultima_linha_com_dado(ws: Worksheet, col_chave: int, header_row: int) -> int:
@@ -266,7 +278,8 @@ def _escrever_linhas_brutas(
     do DataFrame, só nas colunas de dado bruto (mapeadas por nome — colunas
     do DataFrame sem correspondência no cabeçalho da aba são ignoradas).
     Normaliza valor monetário em texto pra número (ver `_normalizar_valor_bruto`)
-    e copia o `number_format` da `linha_modelo` pra cada célula nova."""
+    e copia o estilo completo (`_copiar_estilo`) da `linha_modelo` pra cada
+    célula nova."""
     for offset, (_, row) in enumerate(df.iterrows()):
         linha_excel = linha_inicio + offset
         for nome_coluna, valor in row.items():
@@ -278,7 +291,7 @@ def _escrever_linhas_brutas(
             else:
                 valor = _normalizar_valor_bruto(valor)
             ws.cell(row=linha_excel, column=col).value = valor
-            _copiar_number_format(ws, linha_modelo, linha_excel, col)
+            _copiar_estilo(ws, linha_modelo, linha_excel, col)
 
 
 def _as_date(v: object) -> date | None:
