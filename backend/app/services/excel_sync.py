@@ -280,12 +280,6 @@ def atualizar_db_pagasanalitico(wb, dia: date) -> dict:
     linha_modelo = ultima if ultima > header_row else None
     if bloco is not None:
         linha_modelo = bloco[0] - 1 if bloco[0] - 1 > header_row else linha_modelo
-        qtd_removida = bloco[1] - bloco[0] + 1
-        ws.delete_rows(bloco[0], qtd_removida)
-        linha_inicio = bloco[0]
-        logger.info("db_pagasanalitico: removidas %d linhas antigas do dia %s antes de reinserir.", qtd_removida, dia)
-    else:
-        linha_inicio = ultima + 1
 
     if linha_modelo is None:
         raise AtualizacaoRecusada(
@@ -294,6 +288,9 @@ def atualizar_db_pagasanalitico(wb, dia: date) -> dict:
             "menos 1 linha manualmente no Excel antes de rodar a automação."
         )
 
+    # Baixa ANTES de mexer na planilha — se o download falhar, nada foi
+    # alterado no workbook em memória (e o CLI, por sua vez, não salva nada
+    # no disco se uma exceção subir até ele).
     filtro = (
         "Tipo+Exibicao=qtde%5E_propostas&Tipo+Veiculo=&Tipo+Pessoa="
         f"&Dt+Relatorio+Date={dia.isoformat()}"
@@ -308,6 +305,14 @@ def atualizar_db_pagasanalitico(wb, dia: date) -> dict:
     df = baixar_looker_bruto("acompanhamento_veiculos", "analitico", filter_query_override=filtro)
     df["Dt Relatório"] = pd.to_datetime(df["Dt Relatório"]).dt.date
     df = df[df["Dt Relatório"] == dia].reset_index(drop=True)
+
+    if bloco is not None:
+        qtd_removida = bloco[1] - bloco[0] + 1
+        ws.delete_rows(bloco[0], qtd_removida)
+        linha_inicio = bloco[0]
+        logger.info("db_pagasanalitico: removidas %d linhas antigas do dia %s antes de reinserir.", qtd_removida, dia)
+    else:
+        linha_inicio = ultima + 1
 
     colunas_formula = _colunas_formula(ws, linha_modelo, ws.max_column)
     _escrever_linhas_brutas(ws, linha_inicio, df, mapa)
@@ -375,12 +380,6 @@ def atualizar_db_apuracaoavista(wb, anomes: str) -> dict:
     linha_modelo = ultima if ultima > header_row else None
     if bloco is not None:
         linha_modelo = bloco[0] - 1 if bloco[0] - 1 > header_row else linha_modelo
-        qtd_removida = bloco[1] - bloco[0] + 1
-        ws.delete_rows(bloco[0], qtd_removida)
-        linha_inicio = bloco[0]
-        logger.info("db_apuracaoavista: removidas %d linhas antigas do mês %s antes de reinserir.", qtd_removida, anomes)
-    else:
-        linha_inicio = ultima + 1
 
     if linha_modelo is None:
         raise AtualizacaoRecusada(
@@ -388,10 +387,19 @@ def atualizar_db_apuracaoavista(wb, anomes: str) -> dict:
             "linha manualmente antes de rodar a automação."
         )
 
+    # Baixa ANTES de mexer na planilha (ver mesma nota em atualizar_db_pagasanalitico).
     mes_fmt = f"{anomes[:4]}-{anomes[4:]}"  # "202609" -> "2026-09"
     df = baixar_looker_bruto("comissao_avista", "analitico", filter_value_override=mes_fmt)
     df["Anomes Apuracao"] = df["Anomes Apuracao"].astype(str)
     df = df[df["Anomes Apuracao"] == anomes].reset_index(drop=True)
+
+    if bloco is not None:
+        qtd_removida = bloco[1] - bloco[0] + 1
+        ws.delete_rows(bloco[0], qtd_removida)
+        linha_inicio = bloco[0]
+        logger.info("db_apuracaoavista: removidas %d linhas antigas do mês %s antes de reinserir.", qtd_removida, anomes)
+    else:
+        linha_inicio = ultima + 1
 
     colunas_formula = _colunas_formula(ws, linha_modelo, ws.max_column)
     _escrever_linhas_brutas(ws, linha_inicio, df, mapa)
@@ -448,12 +456,6 @@ def atualizar_db_mercado(wb, anomes: str) -> dict:
     linha_modelo = ultima if ultima > header_row else None
     if bloco is not None:
         linha_modelo = bloco[0] - 1 if bloco[0] - 1 > header_row else linha_modelo
-        qtd_removida = bloco[1] - bloco[0] + 1
-        ws.delete_rows(bloco[0], qtd_removida)
-        linha_inicio = bloco[0]
-        logger.info("db_mercado: removidas %d linhas antigas do mês %s antes de reinserir.", qtd_removida, anomes)
-    else:
-        linha_inicio = ultima + 1
 
     if linha_modelo is None:
         raise AtualizacaoRecusada(
@@ -461,6 +463,7 @@ def atualizar_db_mercado(wb, anomes: str) -> dict:
             "manualmente antes de rodar a automação."
         )
 
+    # Baixa ANTES de mexer na planilha (ver mesma nota em atualizar_db_pagasanalitico).
     filtro_base = (
         "R%24%2F%23=1&Dt+Refer%C3%AAncia+Month={mes}&Lojista=&Nome+GP=&SUPERVISOR="
         "&Nome+GN=&Nome+Filial=&Concession%C3%A1ria=&Auto+Shopping=&Plataforma="
@@ -471,6 +474,14 @@ def atualizar_db_mercado(wb, anomes: str) -> dict:
     )
     df["Mês"] = pd.to_datetime(df["Mês"]).dt.date
     df = df[df["Mês"].apply(lambda d: d.year == ano and d.month == mes)].reset_index(drop=True)
+
+    if bloco is not None:
+        qtd_removida = bloco[1] - bloco[0] + 1
+        ws.delete_rows(bloco[0], qtd_removida)
+        linha_inicio = bloco[0]
+        logger.info("db_mercado: removidas %d linhas antigas do mês %s antes de reinserir.", qtd_removida, anomes)
+    else:
+        linha_inicio = ultima + 1
 
     colunas_formula = _colunas_formula(ws, linha_modelo, ws.max_column)
     _escrever_linhas_brutas(ws, linha_inicio, df, mapa)
