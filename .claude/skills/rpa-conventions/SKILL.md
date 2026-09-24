@@ -279,6 +279,17 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     precisa logar antes de aceitar** — é o único jeito de ver o texto de um erro que só existe como
     `alert()`, nunca como elemento de página.
 
+28. **`PortalLoginError` genérico de timeout (60s) pode ser, na real, um `alert()` de negócio que o
+    item 27 finalmente deixou visível: `"Usuário inativo ou afastado."`** Confirmado em produção
+    (2026-09-24) — depois do fix do item 27, o log passou a mostrar esse alert duas vezes (uma por
+    tentativa do `@retry`) antes do timeout final. **Não é bug de código nenhum** — é o portal
+    recusando o login porque o status da conta de automação no lado do C6 está inativo/afastado.
+    Nenhum ajuste de seletor, senha ou fluxo resolve isso; a única saída é pedir pra quem administra
+    usuários no WebAutorizador (contato C6, ou admin interno) reativar a conta. Lição geral: um
+    timeout genérico de login pode estar escondendo uma mensagem de negócio legítima do portal, não
+    necessariamente um problema técnico — sempre olhar o log de dialogs (item 27) antes de suspeitar
+    de seletor/senha/código.
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por
