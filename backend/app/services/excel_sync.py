@@ -122,7 +122,19 @@ def _tirar_print_evidencia(page: Page, report_name: str) -> Path:
     """Print de tela do dashboard Looker logo depois do filtro aplicado e
     renderizado (mesmo estado que gerou os dados baixados) — serve de
     evidência visual pro relatório de atualização, pra conferir que o número
-    baixado bate com o que o Looker mostra na tela."""
+    baixado bate com o que o Looker mostra na tela.
+
+    Antes do print: tira o mouse de cima do gráfico e volta o scroll pro topo.
+    Sem isso, o cursor fica parado onde o último clique do download deixou
+    (ex.: em cima de uma barra do gráfico), e o Looker mantém o balão de
+    hover daquele ponto aberto no print — não é a informação mais relevante
+    do dashboard, é só o acaso de onde o mouse ficou (achado real em
+    2026-09-24: o print de "Digitação x Dia" saiu mostrando o tooltip de
+    "PROPOSTA REPROVADA" sem motivo). Resetar o scroll garante que o print
+    sempre comece pela parte de cima do dashboard, que é a mais informativa."""
+    page.mouse.move(0, 0)
+    page.evaluate("window.scrollTo(0, 0)")
+    page.wait_for_timeout(300)
     _EVIDENCIAS_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     dest = _EVIDENCIAS_DIR / f"{report_name}_{timestamp}.png"
