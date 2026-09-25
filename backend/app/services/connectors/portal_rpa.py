@@ -50,9 +50,22 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 _CONFIG_PATH = Path(__file__).parent / "portal_selectors.json"
-_ARTIFACTS_DIR = Path(os.environ.get("RPA_ARTIFACTS_DIR", "/app/artifacts"))
+# backend/app/services/connectors/portal_rpa.py -> parents[3] == backend/. Antes
+# o padrão era "/app/artifacts" (pensado pro Docker/Linux de quando isso rodava
+# em nuvem) — no Windows local (onde este projeto sempre roda agora, ver skill
+# project-context), Path("/app/artifacts") vira a raiz do disco (ex.: C:\app\
+# artifacts), não a pasta do projeto. Achado real em 2026-09-25: os prints de
+# evidência estavam sumindo pro usuário porque RPA_ARTIFACTS_DIR não estava
+# setada nesse terminal, e caiu nesse padrão antigo sem o usuário perceber.
+# Ancorado em __file__ (não no cwd) pra funcionar não importa de onde o script
+# for chamado, e sempre cair na MESMA pasta backend/artifacts já usada e
+# confiável (tem downloads históricos desde antes desta automação existir).
+_BACKEND_DIR = Path(__file__).resolve().parents[3]
+_ARTIFACTS_DIR = Path(os.environ.get("RPA_ARTIFACTS_DIR", str(_BACKEND_DIR / "artifacts")))
 _HEADLESS = os.environ.get("HEADLESS", "true").lower() != "false"
-_BROWSER_PROFILE_DIR = Path(os.environ.get("RPA_BROWSER_PROFILE_DIR", "/app/browser_profile"))
+_BROWSER_PROFILE_DIR = Path(
+    os.environ.get("RPA_BROWSER_PROFILE_DIR", str(_BACKEND_DIR / "browser_profile"))
+)
 
 
 class PortalLoginError(RuntimeError):
@@ -483,8 +496,11 @@ def _run_cli() -> None:
     Execução manual para validar o RPA visualmente contra o portal real antes de
     colocar em produção. Rode com HEADLESS=false para ver o navegador:
 
-        HEADLESS=false RPA_ARTIFACTS_DIR=./artifacts RPA_BROWSER_PROFILE_DIR=./browser_profile \\
-            python -m app.services.connectors.portal_rpa --debug
+        HEADLESS=false python -m app.services.connectors.portal_rpa --debug
+
+    RPA_ARTIFACTS_DIR/RPA_BROWSER_PROFILE_DIR são opcionais — sem elas, cai em
+    backend/artifacts e backend/browser_profile por padrão (ver _BACKEND_DIR
+    acima). Só defina se quiser usar outra pasta.
 
     Na PRIMEIRA vez, se o portal pedir a verificação de dispositivo, resolva
     manualmente (clique em Permitir/Bloquear) — como o perfil agora é
