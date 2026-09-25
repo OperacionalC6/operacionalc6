@@ -17,3 +17,10 @@ pyotp>=2.9
 pandas>=2.2
 openpyxl>=3.1
 python-dateutil>=2.9
+pillow>=10.4
+# pywin32 é usado só pelo print dos dashboards da aba ACOMP_DIARIO
+# (app/services/acomp_diario_evidencia.py), via automação COM do Excel —
+# só funciona no Windows, onde este projeto sempre roda (ver skill
+# project-context). Import é lazy (dentro da função), então o resto do
+# projeto continua rodando normalmente sem essa dependência instalada.
+pywin32>=306; sys_platform == "win32"

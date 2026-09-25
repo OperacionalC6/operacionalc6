@@ -38,7 +38,9 @@ from pathlib import Path
 import openpyxl
 
 from app.core.logging import configure_logging
+from app.services.acomp_diario_evidencia import capturar_prints_acomp_diario
 from app.services.excel_sync import (
+    _EVIDENCIAS_DIR,
     AtualizacaoRecusada,
     arrastar_base_final,
     atualizar_db_apuracaoavista,
@@ -146,6 +148,20 @@ def main() -> None:
 
     wb.save(caminho)
     logger.info("Planilha salva: %s", caminho)
+
+    # Print dos 3 "dashboards" da aba ACOMP_DIARIO — precisa ser DEPOIS do
+    # save (abre o arquivo já salvo no Excel de verdade via COM, pra
+    # recalcular e printar com os números atualizados). Pedido explícito do
+    # usuário em 2026-09-25; falha aqui não derruba a atualização de dado,
+    # que já terminou.
+    try:
+        evidencias.extend(capturar_prints_acomp_diario(caminho, _EVIDENCIAS_DIR))
+    except Exception as exc:
+        logger.warning(
+            "Não consegui tirar os prints da aba ACOMP_DIARIO (não afeta a atualização — "
+            "os dados já foram salvos normalmente): %s",
+            exc,
+        )
 
     relatorio = gerar_relatorio(resultados, evidencias)
     print(relatorio)
