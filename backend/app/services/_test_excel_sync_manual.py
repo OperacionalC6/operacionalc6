@@ -108,11 +108,16 @@ def fake_baixar(report_name, tile_key, *, filter_query_override=None, filter_val
             "R$ Principal Total": [7000.0, 8000.0, 15000.0],
         })
     if report_name == "painel_visita_mercado":
+        # Reproduz o bug real de 2026-09-25: CNPJ veio como float puro (o
+        # pandas lê dígitos sem pontuação como número — sem tratamento
+        # especial isso vira notação científica no Excel) e "Produção C6"
+        # veio abreviado ("510.8 mil"), formato que o parser antigo não
+        # reconhecia (só entendia "R$ ...").
         return pd.DataFrame({
             "Nome Gp": ["BRUNO"],
-            "CNPJ Loja": ["333"],
+            "CNPJ Loja": [37748240000189.0],
             "Mês": [datetime(2026, 9, 1)],
-            "Produção C6": [500.0],
+            "Produção C6": ["510.8 mil"],
         })
     raise AssertionError(f"relatório inesperado no teste: {report_name}")
 
@@ -192,6 +197,23 @@ def main():
     assert ws.max_row == 3
     assert res["check_quantidade_bate"] is True
     print("  OK.\n")
+
+    print("== conferindo CNPJ como texto + valor abreviado (bug real 2026-09-25) ==")
+    col_cnpj = 8  # "CNPJ Loja": G=7 Nome Gp, H=8 CNPJ Loja
+    col_producao = 10  # J=10 Produção C6
+    cnpj_linha3 = ws.cell(row=3, column=col_cnpj).value
+    assert isinstance(cnpj_linha3, str), (
+        f"CNPJ devia ter virado texto (era float puro 37748240000189.0), "
+        f"veio {type(cnpj_linha3).__name__}: {cnpj_linha3!r}"
+    )
+    assert cnpj_linha3 == "37748240000189", f"CNPJ convertido errado: {cnpj_linha3!r}"
+    producao_linha3 = ws.cell(row=3, column=col_producao).value
+    assert isinstance(producao_linha3, float), (
+        f"'Produção C6' devia ter virado float (era '510.8 mil' abreviado), "
+        f"veio {type(producao_linha3).__name__}: {producao_linha3!r}"
+    )
+    assert producao_linha3 == 510800.0, f"valor abreviado convertido errado: {producao_linha3!r}"
+    print(f"  OK: CNPJ virou {cnpj_linha3!r} (texto) e '510.8 mil' virou {producao_linha3!r} (float).\n")
 
     print("== testando recusa (mês fora de ordem em db_apuracaoavista) ==")
     try:

@@ -309,23 +309,42 @@ def _bloco_final_que_bate(
 
 
 _RE_VALOR_MONETARIO = re.compile(r"^-?R\$\s*[\d.,]+$")
+_RE_VALOR_ABREVIADO = re.compile(r"^-?[\d.,]+\s*(mil|mm|mi)$", re.IGNORECASE)
 
 
 def _normalizar_valor_bruto(valor: object) -> object:
-    """Converte string monetária do Looker (ex.: "R$ 1,506.47") pro float
-    correspondente — usa o mesmo `parse_looker_number` já usado no resto do
-    código (ver `_num`/`PortalRpaConnector._parse_brl_value`). Sem isso, essas
-    colunas entravam como TEXTO puro nas linhas novas, diferente das linhas
-    antigas (sempre número de verdade), quebrando silenciosamente qualquer
-    fórmula que soma/compara essas células (achado real em 2026-09-24: colunas
-    AO/AT viraram 'R$ 1,506.47' em vez de 1506.47 nas linhas inseridas hoje).
-    Só mexe em valores que claramente parecem dinheiro no formato do Looker —
-    texto genérico (nome, status, CNPJ, etc.) fica intocado."""
-    if isinstance(valor, str) and _RE_VALOR_MONETARIO.match(valor.strip()):
-        from app.services.connectors.base import parse_looker_number
+    """Converte string monetária do Looker (ex.: "R$ 1,506.47") OU abreviada
+    (ex.: "510.8 mil", "1.2 MM" — achado real em 2026-09-25, coluna 'Produção
+    C6'/'Financiamento Total' de db_mercado) pro float correspondente — usa o
+    mesmo `parse_looker_number` já usado no resto do código (ver `_num`/
+    `PortalRpaConnector._parse_brl_value`, que já sabia interpretar "mil"/
+    "mm"/"mi"). Sem isso, essas colunas entravam como TEXTO puro nas linhas
+    novas, diferente das linhas antigas (sempre número de verdade), quebrando
+    silenciosamente qualquer fórmula que soma/compara essas células. Só mexe
+    em valores que claramente parecem dinheiro no formato do Looker — texto
+    genérico (nome, status, CNPJ, etc.) fica intocado."""
+    if isinstance(valor, str):
+        s = valor.strip()
+        if _RE_VALOR_MONETARIO.match(s) or _RE_VALOR_ABREVIADO.match(s):
+            from app.services.connectors.base import parse_looker_number
 
-        return parse_looker_number(valor)
+            return parse_looker_number(valor)
     return valor
+
+
+def _eh_coluna_identificador_textual(nome_coluna: str) -> bool:
+    """Colunas que devem ser SEMPRE texto, nunca número — CNPJ e afins.
+    Achado real em 2026-09-25: quando o export do Looker vem com o CNPJ só em
+    dígitos (sem pontuação), o pandas lê como int/float, e o Excel mostra em
+    notação científica (37748240000189 -> "3,77482E+13") — diferente das
+    linhas antigas, que sempre tiveram o CNPJ como texto de verdade."""
+    return "cnpj" in nome_coluna.lower()
+
+
+def _forcar_texto_identificador(valor: object) -> str:
+    if isinstance(valor, float) and valor.is_integer():
+        return str(int(valor))
+    return str(valor).strip()
 
 
 def _escrever_linhas_brutas(
@@ -338,9 +357,10 @@ def _escrever_linhas_brutas(
     """Escreve `df` a partir de `linha_inicio`, uma linha do Excel por linha
     do DataFrame, só nas colunas de dado bruto (mapeadas por nome — colunas
     do DataFrame sem correspondência no cabeçalho da aba são ignoradas).
-    Normaliza valor monetário em texto pra número (ver `_normalizar_valor_bruto`)
-    e copia o estilo completo (`_copiar_estilo`) da `linha_modelo` pra cada
-    célula nova."""
+    Normaliza valor monetário/abreviado pra número (ver `_normalizar_valor_bruto`),
+    força coluna de CNPJ a ficar sempre como texto (ver
+    `_eh_coluna_identificador_textual`) e copia o estilo completo
+    (`_copiar_estilo`) da `linha_modelo` pra cada célula nova."""
     for offset, (_, row) in enumerate(df.iterrows()):
         linha_excel = linha_inicio + offset
         for nome_coluna, valor in row.items():
@@ -349,6 +369,8 @@ def _escrever_linhas_brutas(
                 continue
             if pd.isna(valor):
                 valor = None
+            elif _eh_coluna_identificador_textual(str(nome_coluna)):
+                valor = _forcar_texto_identificador(valor)
             else:
                 valor = _normalizar_valor_bruto(valor)
             ws.cell(row=linha_excel, column=col).value = valor
