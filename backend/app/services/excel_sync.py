@@ -380,8 +380,11 @@ def _capturar_evidencias_pagasanalitico(page: Page, evidencias: list[Path]) -> N
     não por posição de pixel) e tira outro print, que mostra "Produção
     Mensal"/"Produção x Dia" (também sem hover). Cobre os dois números do
     check original do usuário: contagem de propostas por dia e (R$) Produção.
-    Falha em achar a aba "Produção" não derruba a atualização — evidência é
-    um extra, não faz parte da lógica de dado."""
+    Por fim tira um print em tela cheia da tile "Produção - Comparativo
+    Mensal" (ver `_capturar_evidencia_comparativo_producao`), pedido
+    explícito do usuário em 2026-09-25. Falha em qualquer parte dessa captura
+    não derruba a atualização — evidência é um extra, não faz parte da
+    lógica de dado."""
     evidencias.append(_tirar_print_evidencia(page, "acompanhamento_veiculos_digitacao_x_dia"))
     try:
         # A aba "Produção" é um <a> (link), não um <button> — confirmado
@@ -395,6 +398,59 @@ def _capturar_evidencias_pagasanalitico(page: Page, evidencias: list[Path]) -> N
             "evidência (não afeta a atualização — os dados já foram baixados normalmente): %s",
             exc,
         )
+        return
+
+    try:
+        evidencias.append(_capturar_evidencia_comparativo_producao(page))
+    except Exception as exc:
+        logger.warning(
+            "Não consegui tirar o print em tela cheia de 'Produção - Comparativo Mensal' "
+            "(não afeta a atualização — os dados já foram baixados normalmente): %s",
+            exc,
+        )
+
+
+def _capturar_evidencia_comparativo_producao(page: Page) -> Path:
+    """Tile 'Produção - Comparativo Mensal' (pedido explícito do usuário em
+    2026-09-25): fica mais embaixo na aba 'Produção' e só carrega o dado
+    quando scrollada até ficar visível (lazy load do Looker — sem isso o
+    print saía com a tabela vazia). Abre "Tile actions" > "View" > "Full
+    Screen" (nomes confirmados inspecionando o dashboard real) pra um print
+    limpo, sem o resto da página ao redor. Não precisa do filtro de dia — a
+    tile mostra sempre a comparação dos últimos meses, independente do dia
+    filtrado na URL (confirmado pelo usuário)."""
+    botao_tile = page.get_by_role(
+        "button", name="Produção - Comparativo Mensal - Tile actions", exact=True
+    )
+    botao_tile.scroll_into_view_if_needed()
+    page.wait_for_timeout(4000)  # tempo pro lazy load da tabela carregar os dados
+
+    botao_tile.click()
+    page.wait_for_timeout(500)
+
+    view_item = page.get_by_role("menuitem", name="View", exact=True)
+    view_item.hover()
+    page.wait_for_timeout(500)
+    fullscreen_item = page.get_by_role("menuitem", name="Full Screen", exact=True)
+    if not fullscreen_item.is_visible():
+        view_item.click()
+        page.wait_for_timeout(500)
+    fullscreen_item.click()
+    page.wait_for_timeout(2000)
+
+    _EVIDENCIAS_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dest = _EVIDENCIAS_DIR / f"acompanhamento_veiculos_producao_comparativo_mensal_{timestamp}.png"
+    # Sem full_page=True nem reset de scroll (ver _tirar_print_evidencia):
+    # em tela cheia a tile já ocupa a viewport inteira, mexer no scroll da
+    # página por baixo pode até fechar o modo tela cheia.
+    page.mouse.move(0, 0)
+    page.wait_for_timeout(200)
+    page.screenshot(path=str(dest))
+
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(500)
+    return dest
 
 
 def _baixar_pagasanalitico_com_evidencias(
