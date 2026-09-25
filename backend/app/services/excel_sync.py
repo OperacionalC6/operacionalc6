@@ -387,10 +387,11 @@ def _capturar_evidencias_pagasanalitico(page: Page, evidencias: list[Path]) -> N
         page.get_by_role("button", name="Produção", exact=False).first.click()
         page.wait_for_timeout(2000)
         evidencias.append(_tirar_print_evidencia(page, "acompanhamento_veiculos_producao"))
-    except Exception:
+    except Exception as exc:
         logger.warning(
             "Não consegui abrir a aba 'Produção' do dashboard pra tirar o print de "
-            "evidência (não afeta a atualização — os dados já foram baixados normalmente)."
+            "evidência (não afeta a atualização — os dados já foram baixados normalmente): %s",
+            exc,
         )
 
 
