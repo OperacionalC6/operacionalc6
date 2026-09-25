@@ -384,7 +384,9 @@ def _capturar_evidencias_pagasanalitico(page: Page, evidencias: list[Path]) -> N
     um extra, não faz parte da lógica de dado."""
     evidencias.append(_tirar_print_evidencia(page, "acompanhamento_veiculos_digitacao_x_dia"))
     try:
-        page.get_by_role("button", name="Produção", exact=False).first.click()
+        # A aba "Produção" é um <a> (link), não um <button> — confirmado
+        # inspecionando o dashboard real em 2026-09-25.
+        page.get_by_role("link", name="Produção", exact=False).first.click()
         page.wait_for_timeout(2000)
         evidencias.append(_tirar_print_evidencia(page, "acompanhamento_veiculos_producao"))
     except Exception as exc:
