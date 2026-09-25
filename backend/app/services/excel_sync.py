@@ -642,11 +642,19 @@ def atualizar_db_apuracaoavista(
         )
 
     # Baixa ANTES de mexer na planilha (ver mesma nota em atualizar_db_pagasanalitico).
-    mes_fmt = f"{anomes[:4]}-{anomes[4:]}"  # "202609" -> "2026-09"
+    #
+    # NÃO forçamos "Safra Mês" pro mês exato (ex.: "2026-09") — achado real em
+    # 2026-09-25, comparando ao vivo os dois filtros: "Safra Mês" e "Anomes
+    # Apuracao" são dimensões DIFERENTES no Looker. Forçar "Safra Mês=2026-09"
+    # excluiu silenciosamente 24 contratos que são de setembro pelo "Anomes
+    # Apuracao" mas têm outro valor de "Safra Mês" (429 linhas em vez das 453
+    # reais). Usamos o filtro relativo PADRÃO configurado ("2 months" — largo
+    # o bastante pra sempre cobrir o mês corrente) e filtramos o mês exato
+    # em Python pelo "Anomes Apuracao" mesmo, igual já fazemos com sucesso em
+    # atualizar_db_pagasanalitico/atualizar_db_mercado.
     df = baixar_looker_bruto(
         "comissao_avista",
         "analitico",
-        filter_value_override=mes_fmt,
         sessao=sessao,
         evidencias=evidencias,
     )
