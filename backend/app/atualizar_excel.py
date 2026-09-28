@@ -9,11 +9,13 @@ Uso:
     python -m app.atualizar_excel --planilha "C:\\caminho\\Construcao.xlsx" --aba db_mercado --mes 2026-09
     python -m app.atualizar_excel --planilha "C:\\caminho\\Construcao.xlsx" --tudo
 
-`--tudo` roda as 3 abas no período mais recente de cada uma (dia de hoje pra
-db_pagasanalitico, mês corrente pra db_apuracaoavista/db_mercado), nessa
-ordem, e arrasta o base_final no final — faz 1 login só no portal, reaproveitado
-pelos 3 downloads (ver `sessao_looker` em `excel_sync.py`), em vez de logar de
-novo a cada aba.
+`--tudo` roda as 3 abas no período mais recente de cada uma — db_pagasanalitico
+processa hoje + os 2 dias anteriores (não só hoje: se algum dia ficou sem
+rodar, o buraco é preenchido sozinho, sem duplicar o que já existe — ver
+`atualizar_db_pagasanalitico_ultimos_dias` em `excel_sync.py`), mês corrente
+pra db_apuracaoavista/db_mercado —, nessa ordem, e arrasta o base_final no
+final — faz 1 login só no portal, reaproveitado por todos os downloads (ver
+`sessao_looker` em `excel_sync.py`), em vez de logar de novo a cada aba.
 
 Sempre que `db_apuracaoavista` for atualizada (isoladamente ou via `--tudo`),
 o script arrasta o `base_final` automaticamente em seguida — é a única aba
@@ -46,6 +48,7 @@ from app.services.excel_sync import (
     atualizar_db_apuracaoavista,
     atualizar_db_mercado,
     atualizar_db_pagasanalitico,
+    atualizar_db_pagasanalitico_ultimos_dias,
     sessao_looker,
 )
 from app.services.relatorio_checks import gerar_relatorio
@@ -113,7 +116,12 @@ def main() -> None:
             # 1 login só, reaproveitado pros 3 downloads (ver sessao_looker em
             # excel_sync.py) — antes disso, --tudo fazia 3 logins inteiros.
             with sessao_looker() as sessao:
-                resultados.append(atualizar_db_pagasanalitico(wb, hoje, sessao=sessao, evidencias=evidencias))
+                # Hoje + os 2 dias anteriores (não só hoje) — se algum dia
+                # ficou sem rodar, esse buraco é preenchido sozinho aqui,
+                # sem duplicar o que já existe (ver docstring da função).
+                resultados.extend(
+                    atualizar_db_pagasanalitico_ultimos_dias(wb, hoje, sessao=sessao, evidencias=evidencias)
+                )
                 resultados.append(
                     atualizar_db_apuracaoavista(wb, anomes_atual, sessao=sessao, evidencias=evidencias)
                 )

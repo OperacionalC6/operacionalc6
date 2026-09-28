@@ -24,6 +24,7 @@ from app.services.excel_sync import (
     atualizar_db_apuracaoavista,
     atualizar_db_mercado,
     atualizar_db_pagasanalitico,
+    atualizar_db_pagasanalitico_ultimos_dias,
 )
 
 
@@ -250,6 +251,50 @@ def main():
     penultimo_id = ws.cell(row=linhas_depois - 2, column=13).value
     assert penultimo_id == 3001, f"linhas antigas do dia 24/09 não foram removidas — achei {penultimo_id} onde esperava 3001"
     print("  OK: linhas antigas do dia removidas e substituídas pelas novas, fórmulas arrastadas certo.\n")
+
+    print("== testando atualizar_db_pagasanalitico_ultimos_dias (preenche buraco de dias esquecidos) ==")
+
+    import re as _re
+
+    def fake_baixar_dias(report_name, tile_key, *, filter_query_override=None, **kwargs):
+        assert report_name == "acompanhamento_veiculos"
+        m = _re.search(r"Dt\+Relatorio\+Date=(\d{4}-\d{2}-\d{2})", filter_query_override)
+        dia_pedido = m.group(1)
+        dia_num = int(dia_pedido[-2:])
+        return pd.DataFrame({
+            "ID Proposta": [9000 + dia_num],
+            "Dt Relatório": [datetime.strptime(dia_pedido, "%Y-%m-%d")],
+            "Lojista": ["50 - K - 555"],
+            "Status Proposta": ["PROPOSTA PAGA"],
+            "Cd Contrato": [f"AU9{dia_num:02d}"],
+            "Vl Financiamento": [float(1000 + dia_num)],
+        })
+
+    excel_sync.baixar_looker_bruto = fake_baixar_dias
+    resultados = atualizar_db_pagasanalitico_ultimos_dias(wb, date(2026, 9, 26), quantidade_dias=3)
+    print(resultados)
+    assert len(resultados) == 3, f"esperava 3 dias processados (24 substituído, 25/26 novos), veio {len(resultados)}"
+    ws = wb["db_pagasanalitico"]
+    assert ws.max_row == 5, f"esperava max_row=5 (header+modelo+3 dias), veio {ws.max_row}"
+    ultimas_3 = [ws.cell(row=r, column=13).value for r in range(3, 6)]
+    assert ultimas_3 == [9024, 9025, 9026], f"esperava IDs [9024,9025,9026] nas linhas 3-5, veio {ultimas_3}"
+    print("  OK: dia 24 substituído e dias 25/26 preenchidos automaticamente, sem duplicar.\n")
+
+    print("== rodando de novo os 'últimos 3 dias' (24 e 25 já cobertos, só 26 deveria atualizar) ==")
+    qtd_linhas_antes = ws.max_row
+    resultados2 = atualizar_db_pagasanalitico_ultimos_dias(wb, date(2026, 9, 26), quantidade_dias=3)
+    print(resultados2)
+    assert len(resultados2) == 1, (
+        f"esperava só o dia 26 sendo reprocessado (24/25 já cobertos, devem ser pulados), "
+        f"veio {len(resultados2)} resultado(s)"
+    )
+    assert resultados2[0]["periodo"] == "2026-09-26"
+    ws = wb["db_pagasanalitico"]
+    assert ws.max_row == qtd_linhas_antes, (
+        f"não deveria ter mudado a quantidade de linhas (só substituiu o dia 26), "
+        f"antes={qtd_linhas_antes} depois={ws.max_row}"
+    )
+    print("  OK: dias 24/25 pulados (já cobertos), só o dia 26 foi reprocessado — sem duplicar.\n")
 
     print("\nTODOS OS TESTES PASSARAM.")
 

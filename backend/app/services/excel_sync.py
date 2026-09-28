@@ -42,7 +42,7 @@ import logging
 import re
 from contextlib import contextmanager
 from copy import copy
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -580,6 +580,57 @@ def atualizar_db_pagasanalitico(
         "linhas_paga": len(pagas),
         "soma_vl_financiamento_paga": round(soma_vl_financiamento_pagas, 2),
     }
+
+
+def atualizar_db_pagasanalitico_ultimos_dias(
+    wb,
+    dia_referencia: date,
+    *,
+    quantidade_dias: int = 3,
+    sessao: tuple[PortalRpaConnector, Page] | None = None,
+    evidencias: list[Path] | None = None,
+) -> list[dict]:
+    """Atualiza vários dias seguidos (por padrão, `dia_referencia` + os 2 dias
+    anteriores) em vez de só um dia — pedido explícito do usuário (2026-09-28):
+    `atualizar_db_pagasanalitico` só mexe no dia exato pedido, então se o
+    usuário esquecer de rodar a automação num dia, aquele dia fica faltando
+    pra sempre (ninguém preenche o buraco depois).
+
+    Processa do dia MAIS ANTIGO pro MAIS NOVO, reaproveitando a mesma lógica
+    segura de sempre em cada dia — substitui o bloco daquele dia se ele já
+    existir na aba, ou arrasta pra frente se for o próximo dia cronológico
+    depois do último já presente. Isso garante, por construção, que nunca há
+    duplicação (mesmo dia sempre substitui, nunca soma) nem perda de dado
+    (cada dia do intervalo é processado, não só o mais recente).
+
+    Se um dia do intervalo já estiver "enterrado" no meio da aba (mais antigo
+    que o último bloco — ex.: rodou ontem e hoje pede de novo os últimos 3
+    dias, dois deles já processados), a atualização daquele dia específico é
+    apenas PULADA (logada, não interrompe os outros dias do intervalo) — sinal
+    de que ele já foi coberto antes, não que algo deu errado.
+
+    Evidência (print do dashboard) só é capturada no dia mais recente — os
+    outros dias mostrariam o mesmo dashboard (que não é filtrado por dia de
+    verdade, ver docstring de `_capturar_evidencias_pagasanalitico`), então
+    capturar de novo seria só redundante e mais lento."""
+    dias = [dia_referencia - timedelta(days=i) for i in range(quantidade_dias - 1, -1, -1)]
+    resultados: list[dict] = []
+    for i, dia in enumerate(dias):
+        eh_ultimo = i == len(dias) - 1
+        try:
+            resultados.append(
+                atualizar_db_pagasanalitico(
+                    wb, dia, sessao=sessao, evidencias=evidencias if eh_ultimo else None
+                )
+            )
+        except AtualizacaoRecusada as exc:
+            logger.info(
+                "db_pagasanalitico: dia %s não atualizado (provavelmente já coberto antes "
+                "por um bloco mais antigo da aba) — %s",
+                dia.isoformat(),
+                exc,
+            )
+    return resultados
 
 
 def _normalizar_texto_numerico(serie: pd.Series) -> pd.Series:
