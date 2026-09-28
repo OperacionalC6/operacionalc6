@@ -296,6 +296,27 @@ def main():
     )
     print("  OK: dias 24/25 pulados (já cobertos), só o dia 26 foi reprocessado — sem duplicar.\n")
 
+    print("== testando dia SEM nenhuma linha PROPOSTA PAGA (bug real 2026-09-28) ==")
+
+    def fake_baixar_sem_paga(report_name, tile_key, **kwargs):
+        return pd.DataFrame({
+            "ID Proposta": [7001, 7002],
+            "Dt Relatório": [datetime(2026, 9, 27)] * 2,
+            "Lojista": ["60 - M - 666"] * 2,
+            "Status Proposta": ["EM ANÁLISE", "PROPOSTA APROVADA"],
+            "Cd Contrato": ["AU700", "AU701"],
+            "Vl Financiamento": ["R$ 100.00", "R$ 200.00"],
+        })
+
+    excel_sync.baixar_looker_bruto = fake_baixar_sem_paga
+    res_sem_paga = atualizar_db_pagasanalitico(wb, date(2026, 9, 27))
+    print(res_sem_paga)
+    assert res_sem_paga["linhas_paga"] == 0, f"esperava 0 linhas PAGA, veio {res_sem_paga['linhas_paga']}"
+    assert res_sem_paga["soma_vl_financiamento_paga"] == 0.0, (
+        f"esperava soma 0.0 (não deveria quebrar/virar string vazia), veio {res_sem_paga['soma_vl_financiamento_paga']!r}"
+    )
+    print("  OK: dia sem PROPOSTA PAGA não quebra o cálculo, soma fica 0.0.\n")
+
     print("\nTODOS OS TESTES PASSARAM.")
 
 

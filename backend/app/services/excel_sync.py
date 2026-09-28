@@ -571,7 +571,15 @@ def atualizar_db_pagasanalitico(
     # ver conversa com o usuário 2026-09-24): imprime os números pra
     # conferência visual rápida contra a tela do Looker.
     pagas = df[df["Status Proposta"] == "PROPOSTA PAGA"]
-    soma_vl_financiamento_pagas = pagas["Vl Financiamento"].apply(_num).sum()
+    # Achado real em 2026-09-28 (com atualizar_db_pagasanalitico_ultimos_dias
+    # rodando um dia sem NENHUMA linha PAGA pela 1ª vez): quando `pagas` fica
+    # vazio, o pandas pode inferir a coluna fatiada como dtype "str" (não
+    # "object"), e `.sum()` numa Series vazia de dtype "str" devolve '' (a
+    # identidade de soma de string), não 0 — quebra o round() logo abaixo.
+    # Checar `len(pagas) > 0` evita cair nesse comportamento de dtype.
+    soma_vl_financiamento_pagas = (
+        pagas["Vl Financiamento"].apply(_num).sum() if len(pagas) > 0 else 0.0
+    )
 
     return {
         "aba": "db_pagasanalitico",
