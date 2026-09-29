@@ -480,8 +480,20 @@ def _baixar_pagasanalitico_com_evidencias(
         "acompanhamento_veiculos", "analitico", filter_query_override=filtro, sessao=sessao
     )
     if evidencias is not None:
-        _, page = sessao
-        _capturar_evidencias_producao(page, evidencias)
+        if len(df) == 0:
+            # Achado real em 2026-09-25/29: quando a consulta do dia não tem
+            # NENHUMA linha (ex.: "hoje" bem cedo, antes de qualquer proposta
+            # digitada), o dashboard inteiro renderiza num estado reduzido
+            # sem a barra de abas (Digitação/Analítico/Produção/...) —
+            # tentar capturar evidência nesse estado só gasta 30s+ num
+            # timeout à toa, sem nada útil pra mostrar mesmo.
+            logger.info(
+                "Sem nenhuma linha baixada pra esse dia — pulando captura de evidência "
+                "(o dashboard não renderiza a barra de abas sem dado; não afeta a atualização)."
+            )
+        else:
+            _, page = sessao
+            _capturar_evidencias_producao(page, evidencias)
     return df
 
 
@@ -615,20 +627,19 @@ def atualizar_db_pagasanalitico_ultimos_dias(
     apenas PULADA (logada, não interrompe os outros dias do intervalo) — sinal
     de que ele já foi coberto antes, não que algo deu errado.
 
-    Evidência (print do dashboard) só é capturada no dia mais recente — os
-    outros dias mostrariam o mesmo dashboard (que não é filtrado por dia de
-    verdade, ver docstring de `_capturar_evidencia_comparativo_producao`),
-    então capturar de novo seria só redundante e mais lento."""
+    Evidência (print do dashboard) é capturada numa 2ª passada, só no dia mais
+    recente que teve pelo menos 1 linha de dado — não necessariamente o
+    último dia do intervalo: se "hoje" ainda não tem nenhuma proposta
+    digitada (comum bem cedo no dia), o dashboard inteiro renderiza sem a
+    barra de abas, e tentar capturar evidência nesse estado só resulta em
+    timeout (achado real em 2026-09-25 e de novo em 2026-09-29). Reprocessar
+    esse dia mais uma vez pra pegar o print é seguro — `atualizar_db_pagasanalitico`
+    já é idempotente pro mesmo dia (substitui o bloco, nunca duplica)."""
     dias = [dia_referencia - timedelta(days=i) for i in range(quantidade_dias - 1, -1, -1)]
     resultados: list[dict] = []
-    for i, dia in enumerate(dias):
-        eh_ultimo = i == len(dias) - 1
+    for dia in dias:
         try:
-            resultados.append(
-                atualizar_db_pagasanalitico(
-                    wb, dia, sessao=sessao, evidencias=evidencias if eh_ultimo else None
-                )
-            )
+            resultados.append(atualizar_db_pagasanalitico(wb, dia, sessao=sessao))
         except AtualizacaoRecusada as exc:
             logger.info(
                 "db_pagasanalitico: dia %s não atualizado (provavelmente já coberto antes "
@@ -636,6 +647,24 @@ def atualizar_db_pagasanalitico_ultimos_dias(
                 dia.isoformat(),
                 exc,
             )
+
+    if evidencias is not None:
+        dia_com_dado = next(
+            (date.fromisoformat(r["periodo"]) for r in reversed(resultados) if r["linhas_baixadas"] > 0),
+            None,
+        )
+        if dia_com_dado is None:
+            logger.info(
+                "Nenhum dos últimos %d dias tem dado ainda — pulando print de evidência "
+                "(não afeta a atualização).",
+                quantidade_dias,
+            )
+        else:
+            try:
+                atualizar_db_pagasanalitico(wb, dia_com_dado, sessao=sessao, evidencias=evidencias)
+            except AtualizacaoRecusada:
+                pass  # já processado normalmente acima; essa 2ª chamada é só pro print
+
     return resultados
 
 

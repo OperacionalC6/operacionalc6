@@ -317,6 +317,45 @@ def main():
     )
     print("  OK: dia sem PROPOSTA PAGA não quebra o cálculo, soma fica 0.0.\n")
 
+    print("== testando fallback de evidência quando o dia mais recente está vazio (bug real 2026-09-29) ==")
+
+    chamadas_evidencia = []
+
+    def fake_capturar_evidencias_producao(page, evidencias):
+        chamadas_evidencia.append(page)
+        evidencias.append("fake_evidencia.png")
+
+    excel_sync._capturar_evidencias_producao = fake_capturar_evidencias_producao
+
+    def fake_baixar_vazio_no_ultimo_dia(report_name, tile_key, *, filter_query_override=None, **kwargs):
+        m = _re.search(r"Dt\+Relatorio\+Date=(\d{4}-\d{2}-\d{2})", filter_query_override)
+        dia_pedido = m.group(1)
+        if dia_pedido == "2026-10-01":  # dia mais recente, sem NENHUMA proposta digitada ainda
+            return pd.DataFrame({
+                "ID Proposta": [], "Dt Relatório": [], "Lojista": [],
+                "Status Proposta": [], "Cd Contrato": [], "Vl Financiamento": [],
+            })
+        dia_num = int(dia_pedido[-2:])
+        return pd.DataFrame({
+            "ID Proposta": [8000 + dia_num],
+            "Dt Relatório": [datetime.strptime(dia_pedido, "%Y-%m-%d")],
+            "Lojista": ["70 - Z - 777"],
+            "Status Proposta": ["PROPOSTA PAGA"],
+            "Cd Contrato": [f"AU8{dia_num:02d}"],
+            "Vl Financiamento": [float(2000 + dia_num)],
+        })
+
+    excel_sync.baixar_looker_bruto = fake_baixar_vazio_no_ultimo_dia
+    sessao_fake = (None, object())  # placeholder — _capturar_evidencias_producao está mockada
+    evidencias_teste = []
+    resultados3 = atualizar_db_pagasanalitico_ultimos_dias(
+        wb, date(2026, 10, 1), quantidade_dias=3, sessao=sessao_fake, evidencias=evidencias_teste
+    )
+    print(resultados3)
+    assert len(evidencias_teste) == 1, f"esperava 1 print capturado (fallback pro dia com dado), veio {len(evidencias_teste)}"
+    assert len(chamadas_evidencia) == 1, f"esperava só 1 chamada de captura de evidência, veio {len(chamadas_evidencia)}"
+    print("  OK: dia mais recente (sem dado) pulado pra evidência; usou o dia anterior com dado.\n")
+
     print("\nTODOS OS TESTES PASSARAM.")
 
 
