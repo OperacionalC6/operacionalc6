@@ -122,20 +122,18 @@ def main() -> None:
                 resultados.extend(
                     atualizar_db_pagasanalitico_ultimos_dias(wb, hoje, sessao=sessao, evidencias=evidencias)
                 )
-                resultados.append(
-                    atualizar_db_apuracaoavista(wb, anomes_atual, sessao=sessao, evidencias=evidencias)
-                )
+                resultados.append(atualizar_db_apuracaoavista(wb, anomes_atual, sessao=sessao))
                 precisa_arrastar_base_final = True
-                resultados.append(atualizar_db_mercado(wb, anomes_atual, sessao=sessao, evidencias=evidencias))
+                resultados.append(atualizar_db_mercado(wb, anomes_atual, sessao=sessao))
         elif args.aba == "db_pagasanalitico":
             resultados.append(atualizar_db_pagasanalitico(wb, args.dia, evidencias=evidencias))
         elif args.aba == "db_apuracaoavista":
             anomes = args.mes.replace("-", "")
-            resultados.append(atualizar_db_apuracaoavista(wb, anomes, evidencias=evidencias))
+            resultados.append(atualizar_db_apuracaoavista(wb, anomes))
             precisa_arrastar_base_final = True
         elif args.aba == "db_mercado":
             anomes = args.mes.replace("-", "")
-            resultados.append(atualizar_db_mercado(wb, anomes, evidencias=evidencias))
+            resultados.append(atualizar_db_mercado(wb, anomes))
 
         if precisa_arrastar_base_final:
             resultados.append(arrastar_base_final(wb))

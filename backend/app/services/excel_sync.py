@@ -118,30 +118,6 @@ def sessao_looker():
             context.close()
 
 
-def _tirar_print_evidencia(page: Page, report_name: str) -> Path:
-    """Print de tela do dashboard Looker logo depois do filtro aplicado e
-    renderizado (mesmo estado que gerou os dados baixados) — serve de
-    evidência visual pro relatório de atualização, pra conferir que o número
-    baixado bate com o que o Looker mostra na tela.
-
-    Antes do print: tira o mouse de cima do gráfico e volta o scroll pro topo.
-    Sem isso, o cursor fica parado onde o último clique do download deixou
-    (ex.: em cima de uma barra do gráfico), e o Looker mantém o balão de
-    hover daquele ponto aberto no print — não é a informação mais relevante
-    do dashboard, é só o acaso de onde o mouse ficou (achado real em
-    2026-09-24: o print de "Digitação x Dia" saiu mostrando o tooltip de
-    "PROPOSTA REPROVADA" sem motivo). Resetar o scroll garante que o print
-    sempre comece pela parte de cima do dashboard, que é a mais informativa."""
-    page.mouse.move(0, 0)
-    page.evaluate("window.scrollTo(0, 0)")
-    page.wait_for_timeout(300)
-    _EVIDENCIAS_DIR.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dest = _EVIDENCIAS_DIR / f"{report_name}_{timestamp}.png"
-    page.screenshot(path=str(dest), full_page=True)
-    return dest
-
-
 def baixar_looker_bruto(
     report_name: str,
     tile_key: str,
@@ -149,7 +125,6 @@ def baixar_looker_bruto(
     filter_query_override: str | None = None,
     filter_value_override: str | None = None,
     sessao: tuple[PortalRpaConnector, Page] | None = None,
-    evidencias: list[Path] | None = None,
 ) -> pd.DataFrame:
     """
     Baixa UMA tile de UM relatório Looker e devolve o DataFrame bruto (todas
@@ -168,9 +143,12 @@ def baixar_looker_bruto(
     se omitido (uso normal, 1 aba isolada), abre e fecha uma sessão só pra
     esse download.
 
-    `evidencias`: lista mutável — se passada, um print da tela do dashboard
-    (ver `_tirar_print_evidencia`) é tirado logo após o download e o caminho
-    do arquivo é adicionado nela (usado pra montar o relatório final).
+    Print de evidência genérico (screenshot logo após o download) foi
+    REMOVIDO daqui — pedido explícito do usuário em 2026-09-29: esses prints
+    saíam incompletos ("No results", tabela sem terminar de carregar) porque
+    eram tirados rápido demais, e na prática só a tile "Produção -
+    Comparativo Mensal" (ver `_capturar_evidencia_comparativo_producao`)
+    interessa como evidência.
     """
     conector_para_config = sessao[0] if sessao is not None else PortalRpaConnector()
     report_cfg = dict(_find_report_cfg(conector_para_config._config, report_name))
@@ -187,13 +165,9 @@ def baixar_looker_bruto(
     if sessao is not None:
         connector, page = sessao
         downloaded = connector._download_looker_tiles(page, report_cfg)
-        if evidencias is not None:
-            evidencias.append(_tirar_print_evidencia(page, report_name))
     else:
         with sessao_looker() as (connector, page):
             downloaded = connector._download_looker_tiles(page, report_cfg)
-            if evidencias is not None:
-                evidencias.append(_tirar_print_evidencia(page, report_name))
 
     file_path, _tile = downloaded[0]
     if file_path.suffix.lower() in (".xlsx", ".xls"):
@@ -392,80 +366,55 @@ def _as_date(v: object) -> date | None:
 # ---------------------------------------------------------------------------
 
 
-def _capturar_evidencias_pagasanalitico(page: Page, evidencias: list[Path]) -> None:
-    """Print de evidência específico pra `db_pagasanalitico`, achado explorando
-    o dashboard de verdade com o usuário em 2026-09-24: depois do download da
-    tile 'Digitação Analítico', a página já fica na aba 'Analítico' do
-    dashboard (padrão), que mostra o gráfico "Digitação x Dia" com os números
-    JÁ IMPRESSOS nas próprias barras — sem precisar de hover em nada. Print
-    dessa aba, depois clica na aba "Produção" (por TEXTO do botão, estável —
-    não por posição de pixel) e tira outro print, que mostra "Produção
-    Mensal"/"Produção x Dia" (também sem hover). Cobre os dois números do
-    check original do usuário: contagem de propostas por dia e (R$) Produção.
-    Por fim tira um print em tela cheia da tile "Produção - Comparativo
-    Mensal" (ver `_capturar_evidencia_comparativo_producao`), pedido
-    explícito do usuário em 2026-09-25. Falha em qualquer parte dessa captura
-    não derruba a atualização — evidência é um extra, não faz parte da
-    lógica de dado."""
-    evidencias.append(_tirar_print_evidencia(page, "acompanhamento_veiculos_digitacao_x_dia"))
-    try:
-        # A aba "Produção" é um <a> (link), não um <button> — confirmado
-        # inspecionando o dashboard real em 2026-09-25.
-        page.get_by_role("link", name="Produção", exact=False).first.click()
-        page.wait_for_timeout(2000)
-        evidencias.append(_tirar_print_evidencia(page, "acompanhamento_veiculos_producao"))
-    except Exception as exc:
-        logger.warning(
-            "Não consegui abrir a aba 'Produção' do dashboard pra tirar o print de "
-            "evidência (não afeta a atualização — os dados já foram baixados normalmente): %s",
-            exc,
-        )
-        return
-
-    try:
-        evidencias.append(_capturar_evidencia_comparativo_producao(page))
-    except Exception as exc:
-        logger.warning(
-            "Não consegui tirar o print em tela cheia de 'Produção - Comparativo Mensal' "
-            "(não afeta a atualização — os dados já foram baixados normalmente): %s",
-            exc,
-        )
-
-
 def _capturar_evidencia_comparativo_producao(page: Page) -> Path:
-    """Tile 'Produção - Comparativo Mensal' (pedido explícito do usuário em
-    2026-09-25): fica mais embaixo na aba 'Produção' e só carrega o dado
-    quando scrollada até ficar visível (lazy load do Looker — sem isso o
-    print saía com a tabela vazia). Abre "Tile actions" > "View" > "Full
+    """ÚNICO print de evidência do Looker que sobrou — pedido explícito do
+    usuário em 2026-09-29, depois de ver que os outros 3 prints (Digitação x
+    Dia, aba Produção genérica, e os prints de comissao_avista/painel_visita_
+    mercado) saíam incompletos ("No results", tabela sem terminar de
+    carregar): eram tirados rápido demais. Removidos — só ficou este.
+
+    Tile 'Produção - Comparativo Mensal', dentro da aba 'Produção' do
+    dashboard 'Acompanhamento Veículos' (pedido original em 2026-09-25): fica
+    mais embaixo na aba e só carrega o dado quando scrollada até ficar
+    visível (lazy load do Looker). Abre "Tile actions" > "View" > "Full
     Screen" (nomes confirmados inspecionando o dashboard real) pra um print
     limpo, sem o resto da página ao redor. Não precisa do filtro de dia — a
     tile mostra sempre a comparação dos últimos meses, independente do dia
-    filtrado na URL (confirmado pelo usuário)."""
+    filtrado na URL (confirmado pelo usuário).
+
+    Esperas generosas (15s) antes de interagir com a aba/tile — achado real
+    em 2026-09-29: esperas curtas demais deixavam a tela sem terminar de
+    carregar antes do print."""
+    # A aba "Produção" é um <a> (link), não um <button> — confirmado
+    # inspecionando o dashboard real em 2026-09-25.
+    page.get_by_role("link", name="Produção", exact=False).first.click()
+    page.wait_for_timeout(15000)  # tempo pra aba renderizar de verdade
+
     botao_tile = page.get_by_role(
         "button", name="Produção - Comparativo Mensal - Tile actions", exact=True
     )
     botao_tile.scroll_into_view_if_needed()
-    page.wait_for_timeout(4000)  # tempo pro lazy load da tabela carregar os dados
+    page.wait_for_timeout(15000)  # tempo pro lazy load da tabela carregar os dados
 
     botao_tile.click()
-    page.wait_for_timeout(500)
+    page.wait_for_timeout(1000)
 
     view_item = page.get_by_role("menuitem", name="View", exact=True)
     view_item.hover()
-    page.wait_for_timeout(500)
+    page.wait_for_timeout(1000)
     fullscreen_item = page.get_by_role("menuitem", name="Full Screen", exact=True)
     if not fullscreen_item.is_visible():
         view_item.click()
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(1000)
     fullscreen_item.click()
-    page.wait_for_timeout(2000)
+    page.wait_for_timeout(3000)
 
     _EVIDENCIAS_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     dest = _EVIDENCIAS_DIR / f"acompanhamento_veiculos_producao_comparativo_mensal_{timestamp}.png"
-    # Sem full_page=True nem reset de scroll (ver _tirar_print_evidencia):
-    # em tela cheia a tile já ocupa a viewport inteira, mexer no scroll da
-    # página por baixo pode até fechar o modo tela cheia.
+    # Sem full_page=True nem reset de scroll: em tela cheia a tile já ocupa a
+    # viewport inteira, mexer no scroll da página por baixo pode até fechar
+    # o modo tela cheia.
     page.mouse.move(0, 0)
     page.wait_for_timeout(200)
     page.screenshot(path=str(dest))
@@ -483,7 +432,14 @@ def _baixar_pagasanalitico_com_evidencias(
     )
     if evidencias is not None:
         _, page = sessao
-        _capturar_evidencias_pagasanalitico(page, evidencias)
+        try:
+            evidencias.append(_capturar_evidencia_comparativo_producao(page))
+        except Exception as exc:
+            logger.warning(
+                "Não consegui tirar o print em tela cheia de 'Produção - Comparativo Mensal' "
+                "(não afeta a atualização — os dados já foram baixados normalmente): %s",
+                exc,
+            )
     return df
 
 
@@ -619,8 +575,8 @@ def atualizar_db_pagasanalitico_ultimos_dias(
 
     Evidência (print do dashboard) só é capturada no dia mais recente — os
     outros dias mostrariam o mesmo dashboard (que não é filtrado por dia de
-    verdade, ver docstring de `_capturar_evidencias_pagasanalitico`), então
-    capturar de novo seria só redundante e mais lento."""
+    verdade, ver docstring de `_capturar_evidencia_comparativo_producao`),
+    então capturar de novo seria só redundante e mais lento."""
     dias = [dia_referencia - timedelta(days=i) for i in range(quantidade_dias - 1, -1, -1)]
     resultados: list[dict] = []
     for i, dia in enumerate(dias):
@@ -689,7 +645,6 @@ def atualizar_db_apuracaoavista(
     anomes: str,
     *,
     sessao: tuple[PortalRpaConnector, Page] | None = None,
-    evidencias: list[Path] | None = None,
 ) -> dict:
     """`anomes` no formato 'AAAAMM' (ex.: '202609')."""
 
@@ -737,7 +692,6 @@ def atualizar_db_apuracaoavista(
         "comissao_avista",
         "analitico",
         sessao=sessao,
-        evidencias=evidencias,
     )
     df["Anomes Apuracao"] = _normalizar_texto_numerico(df["Anomes Apuracao"])
     df = df[df["Anomes Apuracao"] == anomes].reset_index(drop=True)
@@ -782,7 +736,6 @@ def atualizar_db_mercado(
     anomes: str,
     *,
     sessao: tuple[PortalRpaConnector, Page] | None = None,
-    evidencias: list[Path] | None = None,
 ) -> dict:
     """`anomes` no formato 'AAAAMM' (ex.: '202609'). Sem restrição de "só o
     último bloco" — nenhuma outra aba referencia `db_mercado` por posição."""
@@ -829,7 +782,6 @@ def atualizar_db_mercado(
         "analitico_mercado_por_loja",
         filter_query_override=filtro_base,
         sessao=sessao,
-        evidencias=evidencias,
     )
     df["Mês"] = pd.to_datetime(df["Mês"]).dt.date
     df = df[df["Mês"].apply(lambda d: d.year == ano and d.month == mes)].reset_index(drop=True)
