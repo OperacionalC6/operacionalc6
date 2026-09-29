@@ -366,30 +366,41 @@ def _as_date(v: object) -> date | None:
 # ---------------------------------------------------------------------------
 
 
-def _capturar_evidencia_comparativo_producao(page: Page) -> Path:
-    """ÚNICO print de evidência do Looker que sobrou — pedido explícito do
-    usuário em 2026-09-29, depois de ver que os outros 3 prints (Digitação x
-    Dia, aba Produção genérica, e os prints de comissao_avista/painel_visita_
-    mercado) saíam incompletos ("No results", tabela sem terminar de
-    carregar): eram tirados rápido demais. Removidos — só ficou este.
-
-    Tile 'Produção - Comparativo Mensal', dentro da aba 'Produção' do
-    dashboard 'Acompanhamento Veículos' (pedido original em 2026-09-25): fica
-    mais embaixo na aba e só carrega o dado quando scrollada até ficar
-    visível (lazy load do Looker). Abre "Tile actions" > "View" > "Full
-    Screen" (nomes confirmados inspecionando o dashboard real) pra um print
-    limpo, sem o resto da página ao redor. Não precisa do filtro de dia — a
-    tile mostra sempre a comparação dos últimos meses, independente do dia
-    filtrado na URL (confirmado pelo usuário).
-
-    Esperas generosas (15s) antes de interagir com a aba/tile — achado real
-    em 2026-09-29: esperas curtas demais deixavam a tela sem terminar de
-    carregar antes do print."""
-    # A aba "Produção" é um <a> (link), não um <button> — confirmado
-    # inspecionando o dashboard real em 2026-09-25.
+def _ir_para_aba_producao(page: Page) -> None:
+    """A aba "Produção" é um <a> (link), não um <button> — confirmado
+    inspecionando o dashboard real em 2026-09-25. Espera generosa (15s)
+    depois do clique — achado real em 2026-09-29: esperas curtas demais
+    deixavam a tela sem terminar de carregar antes do print."""
     page.get_by_role("link", name="Produção", exact=False).first.click()
-    page.wait_for_timeout(15000)  # tempo pra aba renderizar de verdade
+    page.wait_for_timeout(15000)
 
+
+def _capturar_evidencia_producao_topo(page: Page) -> Path:
+    """Print do topo da aba "Produção" (tiles "Produção Mensal" e "Produção x
+    Dia", lado a lado) — pedido explícito do usuário em 2026-09-29, com
+    imagem de referência mostrando exatamente esse recorte. É a visão que já
+    aparece assim que a aba carrega, sem precisar rolar nem abrir tela
+    cheia — só tira o mouse de cima do gráfico antes (evita balão de hover
+    de um clique anterior aparecer no print, mesmo achado do print antigo de
+    "Digitação x Dia")."""
+    page.mouse.move(0, 0)
+    page.evaluate("window.scrollTo(0, 0)")
+    page.wait_for_timeout(300)
+    _EVIDENCIAS_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dest = _EVIDENCIAS_DIR / f"acompanhamento_veiculos_producao_{timestamp}.png"
+    page.screenshot(path=str(dest))
+    return dest
+
+
+def _capturar_evidencia_comparativo_producao(page: Page) -> Path:
+    """Tile 'Produção - Comparativo Mensal', mais embaixo na aba 'Produção'
+    (pedido original em 2026-09-25): só carrega o dado quando scrollada até
+    ficar visível (lazy load do Looker). Abre "Tile actions" > "View" >
+    "Full Screen" (nomes confirmados inspecionando o dashboard real) pra um
+    print limpo, sem o resto da página ao redor. Não precisa do filtro de
+    dia — a tile mostra sempre a comparação dos últimos meses, independente
+    do dia filtrado na URL (confirmado pelo usuário)."""
     botao_tile = page.get_by_role(
         "button", name="Produção - Comparativo Mensal - Tile actions", exact=True
     )
@@ -424,6 +435,44 @@ def _capturar_evidencia_comparativo_producao(page: Page) -> Path:
     return dest
 
 
+def _capturar_evidencias_producao(page: Page, evidencias: list[Path]) -> None:
+    """Os 2 prints de evidência que sobraram — pedido explícito do usuário em
+    2026-09-29, depois de ver que os outros 3 (Digitação x Dia, aba Produção
+    inteira, e os prints de comissao_avista/painel_visita_mercado) saíam
+    incompletos ("No results", tabela sem terminar de carregar): eram
+    tirados rápido demais e não interessavam. Removidos. Cada print aqui
+    falha de forma independente (um não bloqueia o outro) — evidência é um
+    extra, não faz parte da lógica de dado."""
+    try:
+        _ir_para_aba_producao(page)
+    except Exception as exc:
+        logger.warning(
+            "Não consegui abrir a aba 'Produção' do dashboard — nenhum print de "
+            "evidência será tirado (não afeta a atualização — os dados já foram "
+            "baixados normalmente): %s",
+            exc,
+        )
+        return
+
+    try:
+        evidencias.append(_capturar_evidencia_producao_topo(page))
+    except Exception as exc:
+        logger.warning(
+            "Não consegui tirar o print do topo da aba 'Produção' (não afeta a "
+            "atualização — os dados já foram baixados normalmente): %s",
+            exc,
+        )
+
+    try:
+        evidencias.append(_capturar_evidencia_comparativo_producao(page))
+    except Exception as exc:
+        logger.warning(
+            "Não consegui tirar o print em tela cheia de 'Produção - Comparativo Mensal' "
+            "(não afeta a atualização — os dados já foram baixados normalmente): %s",
+            exc,
+        )
+
+
 def _baixar_pagasanalitico_com_evidencias(
     sessao: tuple[PortalRpaConnector, Page], filtro: str, evidencias: list[Path] | None
 ) -> pd.DataFrame:
@@ -432,14 +481,7 @@ def _baixar_pagasanalitico_com_evidencias(
     )
     if evidencias is not None:
         _, page = sessao
-        try:
-            evidencias.append(_capturar_evidencia_comparativo_producao(page))
-        except Exception as exc:
-            logger.warning(
-                "Não consegui tirar o print em tela cheia de 'Produção - Comparativo Mensal' "
-                "(não afeta a atualização — os dados já foram baixados normalmente): %s",
-                exc,
-            )
+        _capturar_evidencias_producao(page, evidencias)
     return df
 
 
