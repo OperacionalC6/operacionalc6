@@ -44,6 +44,7 @@ from contextlib import contextmanager
 from copy import copy
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote
 
 import pandas as pd
 from openpyxl.formula.translate import Translator
@@ -473,6 +474,98 @@ def _capturar_evidencias_producao(page: Page, evidencias: list[Path]) -> None:
         )
 
 
+def _ir_para_dashboard_apuracao_parceiro_resumo(
+    page: Page, connector: PortalRpaConnector
+) -> None:
+    """Navega direto pro dashboard "Apuração Parceiro 2.0 > Resumo Apuração
+    Parceiro 2.0" (slug próprio, `corp_consignado_embed::01532_auto` — ver
+    portal_selectors.json, relatório 'apuracao_parceiro_resumo') — pedido do
+    usuário em 2026-09-29 pra capturar a tile "Bloco de Metas". É um
+    dashboard Looker DIFERENTE do 'comissao_avista' que esta sessão acabou
+    de baixar (mesma sessão logada dá acesso aos dois, só troca a URL) — não
+    é uma aba do mesmo dashboard. Constrói a URL igual
+    `PortalRpaConnector._download_looker_tiles`, mas só navega, não baixa
+    nada."""
+    report_cfg = _find_report_cfg(connector._config, "apuracao_parceiro_resumo")
+    looker_cfg = connector._config["looker"]
+    url = f"{looker_cfg['base_url']}/embed/dashboards/{report_cfg['dashboard_slug']}"
+    url += f"?{quote(report_cfg['filter_param'])}={quote(report_cfg['filter_value'])}"
+    page.goto(url, wait_until="domcontentloaded")
+    page.get_by_role(
+        "button", name="Resumo - Bloco de Metas - Tile actions", exact=True
+    ).wait_for(state="visible", timeout=30000)
+
+
+def _capturar_evidencia_bloco_metas(page: Page) -> Path:
+    """Tile "Resumo - Bloco de Metas" (aria-label real confirmado em
+    2026-09-01/02 — ver `_nome_nota` em portal_selectors.json — diferente do
+    texto visível "Bloco de Metas"), em tela cheia — pedido explícito do
+    usuário em 2026-09-29, com imagem de referência mostrando a tabela
+    (Anomes Apuracao, Cnpj Master, Master, ..., Faixa Atingimento) de vários
+    meses. Mesmo caminho "Tile actions" > "View" > "Full Screen" já
+    confirmado ao vivo pra outras tiles do Looker (ver
+    `_capturar_evidencia_comparativo_producao`)."""
+    botao_tile = page.get_by_role(
+        "button", name="Resumo - Bloco de Metas - Tile actions", exact=True
+    )
+    botao_tile.scroll_into_view_if_needed()
+    page.wait_for_timeout(15000)  # mesma espera generosa da Comparativo Mensal
+
+    botao_tile.click()
+    page.wait_for_timeout(1000)
+
+    view_item = page.get_by_role("menuitem", name="View", exact=True)
+    view_item.hover()
+    page.wait_for_timeout(1000)
+    fullscreen_item = page.get_by_role("menuitem", name="Full Screen", exact=True)
+    if not fullscreen_item.is_visible():
+        view_item.click()
+        page.wait_for_timeout(1000)
+    fullscreen_item.click()
+    page.wait_for_timeout(3000)
+
+    _EVIDENCIAS_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dest = _EVIDENCIAS_DIR / f"apuracao_parceiro_resumo_bloco_metas_{timestamp}.png"
+    page.mouse.move(0, 0)
+    page.wait_for_timeout(200)
+    page.screenshot(path=str(dest))
+
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(500)
+    return dest
+
+
+def _capturar_evidencia_apuracao_parceiro(
+    sessao: tuple[PortalRpaConnector, Page], evidencias: list[Path]
+) -> None:
+    """Print de evidência do 'Bloco de Metas' — pedido do usuário em
+    2026-09-29. Independente do print de 'Produção' (dashboard diferente);
+    falha aqui nunca deve derrubar a atualização de dado em si, que já
+    terminou nesse ponto."""
+    connector, page = sessao
+    try:
+        _ir_para_dashboard_apuracao_parceiro_resumo(page, connector)
+    except Exception as exc:
+        logger.warning(
+            "Não consegui abrir o dashboard 'Resumo Apuração Parceiro 2.0' — "
+            "nenhum print de evidência do 'Bloco de Metas' será tirado (não "
+            "afeta a atualização — os dados já foram baixados normalmente): %s",
+            exc,
+        )
+        return
+
+    try:
+        evidencias.append(_capturar_evidencia_bloco_metas(page))
+    except Exception as exc:
+        logger.warning(
+            "Não consegui tirar o print em tela cheia de 'Bloco de Metas' "
+            "(não afeta a atualização — os dados já foram baixados "
+            "normalmente): %s",
+            exc,
+        )
+
+
 def _baixar_pagasanalitico_com_evidencias(
     sessao: tuple[PortalRpaConnector, Page], filtro: str, evidencias: list[Path] | None
 ) -> pd.DataFrame:
@@ -716,8 +809,14 @@ def atualizar_db_apuracaoavista(
     anomes: str,
     *,
     sessao: tuple[PortalRpaConnector, Page] | None = None,
+    evidencias: list[Path] | None = None,
 ) -> dict:
-    """`anomes` no formato 'AAAAMM' (ex.: '202609')."""
+    """`anomes` no formato 'AAAAMM' (ex.: '202609').
+
+    `evidencias`: se passada, captura (na MESMA sessão logada, navegando pra
+    outro dashboard) o print em tela cheia da tile "Bloco de Metas" —
+    pedido explícito do usuário em 2026-09-29 (ver
+    `_capturar_evidencia_apuracao_parceiro`)."""
 
     ws = wb["db_apuracaoavista"]
     header_row = 1
@@ -759,11 +858,15 @@ def atualizar_db_apuracaoavista(
     # o bastante pra sempre cobrir o mês corrente) e filtramos o mês exato
     # em Python pelo "Anomes Apuracao" mesmo, igual já fazemos com sucesso em
     # atualizar_db_pagasanalitico/atualizar_db_mercado.
-    df = baixar_looker_bruto(
-        "comissao_avista",
-        "analitico",
-        sessao=sessao,
-    )
+    if evidencias is None:
+        df = baixar_looker_bruto("comissao_avista", "analitico", sessao=sessao)
+    elif sessao is not None:
+        df = baixar_looker_bruto("comissao_avista", "analitico", sessao=sessao)
+        _capturar_evidencia_apuracao_parceiro(sessao, evidencias)
+    else:
+        with sessao_looker() as sessao_local:
+            df = baixar_looker_bruto("comissao_avista", "analitico", sessao=sessao_local)
+            _capturar_evidencia_apuracao_parceiro(sessao_local, evidencias)
     df["Anomes Apuracao"] = _normalizar_texto_numerico(df["Anomes Apuracao"])
     df = df[df["Anomes Apuracao"] == anomes].reset_index(drop=True)
 

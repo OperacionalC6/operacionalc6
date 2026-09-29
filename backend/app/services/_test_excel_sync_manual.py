@@ -356,6 +356,58 @@ def main():
     assert len(chamadas_evidencia) == 1, f"esperava só 1 chamada de captura de evidência, veio {len(chamadas_evidencia)}"
     print("  OK: dia mais recente (sem dado) pulado pra evidência; usou o dia anterior com dado.\n")
 
+    print("== testando print de evidência do 'Bloco de Metas' em atualizar_db_apuracaoavista ==")
+
+    chamadas_evidencia_apuracao = []
+
+    def fake_capturar_evidencia_apuracao_parceiro(sessao, evidencias):
+        chamadas_evidencia_apuracao.append(sessao)
+        evidencias.append("fake_bloco_metas.png")
+
+    excel_sync._capturar_evidencia_apuracao_parceiro = fake_capturar_evidencia_apuracao_parceiro
+
+    def fake_baixar_comissao_avista(report_name, tile_key, **kwargs):
+        assert report_name == "comissao_avista"
+        return pd.DataFrame({
+            "Anomes Apuracao": ["202609", "202609"],
+            "Cd Contrato": ["AU900", "AU901"],
+        })
+
+    excel_sync.baixar_looker_bruto = fake_baixar_comissao_avista
+    sessao_fake_apuracao = (None, object())  # placeholder — função de evidência está mockada
+    evidencias_apuracao = []
+    res_apuracao = atualizar_db_apuracaoavista(
+        wb, "202609", sessao=sessao_fake_apuracao, evidencias=evidencias_apuracao
+    )
+    print(res_apuracao)
+    assert len(chamadas_evidencia_apuracao) == 1, (
+        f"esperava 1 chamada de captura de evidência (sessão já aberta reaproveitada), "
+        f"veio {len(chamadas_evidencia_apuracao)}"
+    )
+    assert evidencias_apuracao == ["fake_bloco_metas.png"], evidencias_apuracao
+    print("  OK: com sessão já aberta, print do 'Bloco de Metas' é capturado na mesma sessão.\n")
+
+    print("== mesmo teste, sem sessão pré-aberta (evidencias pede pra abrir uma sozinha) ==")
+
+    chamadas_evidencia_apuracao.clear()
+
+    class _SessaoLookerFakeCtx:
+        def __enter__(self):
+            return (None, object())
+
+        def __exit__(self, *args):
+            return False
+
+    excel_sync.sessao_looker = lambda: _SessaoLookerFakeCtx()
+    evidencias_apuracao2 = []
+    atualizar_db_apuracaoavista(wb, "202609", evidencias=evidencias_apuracao2)
+    assert len(chamadas_evidencia_apuracao) == 1, (
+        f"esperava 1 chamada de captura de evidência (sessão aberta sob demanda), "
+        f"veio {len(chamadas_evidencia_apuracao)}"
+    )
+    assert evidencias_apuracao2 == ["fake_bloco_metas.png"], evidencias_apuracao2
+    print("  OK: sem sessão pré-aberta, abre uma só pra esse fim e captura o print igual.\n")
+
     print("\nTODOS OS TESTES PASSARAM.")
 
 
