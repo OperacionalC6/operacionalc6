@@ -58,8 +58,9 @@ def montar_workbook_sintetico() -> openpyxl.Workbook:
 
     # --- db_apuracaoavista: só colunas brutas ---
     ws = wb.create_sheet("db_apuracaoavista")
-    ws.append(["Anomes Apuracao", "Cd Contrato", "Status Contrato", "Lojista", "R$ Principal Total"])
-    ws.append(["202608", "AU000", "Ativo", "10 - X - 111", 5000.0])
+    ws.append(["Anomes Apuracao", "Cd Contrato", "Status Contrato", "Lojista", "R$ Principal Total", "% Fator Ajuste Produção"])
+    ws.append(["202608", "AU000", "Ativo", "10 - X - 111", 5000.0, 0.85])
+    ws.cell(row=2, column=6).number_format = "0.0%"
 
     # --- db_mercado: 6 col fórmula (A:F) + brutas a partir de G ---
     ws = wb.create_sheet("db_mercado")
@@ -101,12 +102,16 @@ def fake_baixar(report_name, tile_key, *, filter_query_override=None, filter_val
         # `.astype(str)` ingênuo gerava "202609.0" e nunca batia com "202609"
         # (430 linhas baixadas, 0 batendo). Aqui simulamos exatamente isso:
         # valores float com .0 de sobra, mais uma linha de rodapé com NaN.
+        # "% Fator Ajuste Produção" reproduz o bug real de 2026-09-30: vem
+        # como TEXTO com "." decimal (locale do Looker, não o BR "89,3%"),
+        # e sem tratamento ficava assim mesmo na planilha (não virava número).
         return pd.DataFrame({
             "Anomes Apuracao": [202609.0, 202609.0, float("nan")],
             "Cd Contrato": ["AU200", "AU201", None],
             "Status Contrato": ["Ativo", "Ativo", None],
             "Lojista": ["30 - Z - 333", "30 - Z - 333", None],
             "R$ Principal Total": [7000.0, 8000.0, 15000.0],
+            "% Fator Ajuste Produção": ["89.3%", "0.0%", None],
         })
     if report_name == "painel_visita_mercado":
         # Reproduz o bug real de 2026-09-25: CNPJ veio como float puro (o
@@ -179,6 +184,21 @@ def main():
     assert ws.cell(row=3, column=2).value == "AU200", "1ª linha nova errada"
     assert ws.cell(row=4, column=2).value == "AU201", "2ª linha nova errada"
     print("  OK: linha antiga preservada, linhas novas no lugar certo.\n")
+
+    print("== conferindo normalização de valor percentual (bug real 2026-09-30) ==")
+    col_fator = 6  # "% Fator Ajuste Produção"
+    fator_linha3 = ws.cell(row=3, column=col_fator).value
+    fator_linha4 = ws.cell(row=4, column=col_fator).value
+    assert isinstance(fator_linha3, float), (
+        f"'% Fator Ajuste Produção' devia ter virado float (era '89.3%' baixado como texto), "
+        f"veio {type(fator_linha3).__name__}: {fator_linha3!r}"
+    )
+    assert abs(fator_linha3 - 0.893) < 1e-9, f"valor percentual convertido errado: {fator_linha3!r}"
+    assert fator_linha4 == 0.0, f"'0.0%' deveria virar 0.0, veio {fator_linha4!r}"
+    assert ws.cell(row=3, column=col_fator).number_format == "0.0%", (
+        "number_format percentual não foi copiado da linha-modelo"
+    )
+    print(f"  OK: '89.3%' virou {fator_linha3!r} e '0.0%' virou {fator_linha4!r} (fração, não texto).\n")
 
     print("== arrastar_base_final ==")
     res = arrastar_base_final(wb)

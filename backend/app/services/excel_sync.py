@@ -285,25 +285,33 @@ def _bloco_final_que_bate(
 
 _RE_VALOR_MONETARIO = re.compile(r"^-?R\$\s*[\d.,]+$")
 _RE_VALOR_ABREVIADO = re.compile(r"^-?[\d.,]+\s*(mil|mm|mi)$", re.IGNORECASE)
+_RE_VALOR_PERCENTUAL = re.compile(r"^-?[\d.]+\s*%$")
 
 
 def _normalizar_valor_bruto(valor: object) -> object:
-    """Converte string monetária do Looker (ex.: "R$ 1,506.47") OU abreviada
+    """Converte string monetária do Looker (ex.: "R$ 1,506.47"), abreviada
     (ex.: "510.8 mil", "1.2 MM" — achado real em 2026-09-25, coluna 'Produção
-    C6'/'Financiamento Total' de db_mercado) pro float correspondente — usa o
-    mesmo `parse_looker_number` já usado no resto do código (ver `_num`/
-    `PortalRpaConnector._parse_brl_value`, que já sabia interpretar "mil"/
-    "mm"/"mi"). Sem isso, essas colunas entravam como TEXTO puro nas linhas
-    novas, diferente das linhas antigas (sempre número de verdade), quebrando
-    silenciosamente qualquer fórmula que soma/compara essas células. Só mexe
-    em valores que claramente parecem dinheiro no formato do Looker — texto
-    genérico (nome, status, CNPJ, etc.) fica intocado."""
+    C6'/'Financiamento Total' de db_mercado) OU percentual (ex.: "89.3%" —
+    achado real em 2026-09-30, colunas '% Fator Ajuste Produção'/'% Desconto
+    TXE'/etc. de db_apuracaoavista) pro float correspondente. Money/abreviado
+    usam o mesmo `parse_looker_number` já usado no resto do código (ver
+    `_num`/`PortalRpaConnector._parse_brl_value`); percentual é convertido
+    aqui mesmo (divide por 100 — o Looker exporta "89.3%" pro valor que a
+    célula, já formatada como percentual pela linha-modelo, precisa guardar
+    como fração: 0.893). Sem isso, essas colunas entravam como TEXTO puro nas
+    linhas novas, diferente das linhas antigas (sempre número de verdade),
+    quebrando silenciosamente qualquer fórmula que soma/compara essas
+    células. Só mexe em valores que claramente parecem dinheiro/percentual no
+    formato do Looker — texto genérico (nome, status, CNPJ, etc.) fica
+    intocado."""
     if isinstance(valor, str):
         s = valor.strip()
         if _RE_VALOR_MONETARIO.match(s) or _RE_VALOR_ABREVIADO.match(s):
             from app.services.connectors.base import parse_looker_number
 
             return parse_looker_number(valor)
+        if _RE_VALOR_PERCENTUAL.match(s):
+            return float(s.rstrip("%").strip()) / 100
     return valor
 
 
