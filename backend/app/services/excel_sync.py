@@ -818,13 +818,25 @@ def atualizar_db_apuracaoavista(
     *,
     sessao: tuple[PortalRpaConnector, Page] | None = None,
     evidencias: list[Path] | None = None,
+    filter_value_override: str | None = None,
 ) -> dict:
     """`anomes` no formato 'AAAAMM' (ex.: '202609').
 
     `evidencias`: se passada, captura (na MESMA sessão logada, navegando pra
     outro dashboard) o print em tela cheia da tile "Bloco de Metas" —
     pedido explícito do usuário em 2026-09-29 (ver
-    `_capturar_evidencia_apuracao_parceiro`)."""
+    `_capturar_evidencia_apuracao_parceiro`).
+
+    `filter_value_override`: sobrescreve a janela relativa padrão ("2
+    months", larga o bastante pra cobrir o MÊS CORRENTE) do filtro "Safra
+    Mês" do comissao_avista. Achado real em 2026-10-01: ao reprocessar o MÊS
+    ANTERIOR como catch-up (ver `atualizar_excel.py`), a janela de 2 meses —
+    relativa a HOJE, não ao `anomes` pedido — já não cobre mais contratos
+    mais antigos desse mês (Safra Mês mais velha que Anomes Apuracao), e
+    24 linhas de setembro sumiram silenciosamente numa re-sincronização de
+    teste (pego pela trava de `arrastar_base_final`, nada chegou a ser
+    salvo). Quem chama deve passar uma janela mais larga (ex.: "3 months")
+    ao pedir um mês que não é mais o corrente."""
 
     ws = wb["db_apuracaoavista"]
     header_row = 1
@@ -867,13 +879,22 @@ def atualizar_db_apuracaoavista(
     # em Python pelo "Anomes Apuracao" mesmo, igual já fazemos com sucesso em
     # atualizar_db_pagasanalitico/atualizar_db_mercado.
     if evidencias is None:
-        df = baixar_looker_bruto("comissao_avista", "analitico", sessao=sessao)
+        df = baixar_looker_bruto(
+            "comissao_avista", "analitico", filter_value_override=filter_value_override, sessao=sessao
+        )
     elif sessao is not None:
-        df = baixar_looker_bruto("comissao_avista", "analitico", sessao=sessao)
+        df = baixar_looker_bruto(
+            "comissao_avista", "analitico", filter_value_override=filter_value_override, sessao=sessao
+        )
         _capturar_evidencia_apuracao_parceiro(sessao, evidencias)
     else:
         with sessao_looker() as sessao_local:
-            df = baixar_looker_bruto("comissao_avista", "analitico", sessao=sessao_local)
+            df = baixar_looker_bruto(
+                "comissao_avista",
+                "analitico",
+                filter_value_override=filter_value_override,
+                sessao=sessao_local,
+            )
             _capturar_evidencia_apuracao_parceiro(sessao_local, evidencias)
     df["Anomes Apuracao"] = _normalizar_texto_numerico(df["Anomes Apuracao"])
     df = df[df["Anomes Apuracao"] == anomes].reset_index(drop=True)

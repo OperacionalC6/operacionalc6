@@ -146,8 +146,17 @@ def main() -> None:
                     # print do 'Bloco de Metas' já sai 1x mais abaixo, não
                     # precisa duplicar.
                     try:
+                        # filter_value_override="3 months": a janela padrão
+                        # ("2 months") é relativa a HOJE, não ao mês pedido —
+                        # cobre bem o mês CORRENTE, mas aqui pedimos o mês
+                        # anterior, que já consumiu 1 mês dessa folga (achado
+                        # real em 2026-10-01: sem isso, contratos de Safra
+                        # Mês mais antiga somem silenciosamente — ver
+                        # docstring de atualizar_db_apuracaoavista).
                         resultados.append(
-                            atualizar_db_apuracaoavista(wb, anomes_anterior, sessao=sessao)
+                            atualizar_db_apuracaoavista(
+                                wb, anomes_anterior, sessao=sessao, filter_value_override="3 months"
+                            )
                         )
                         precisa_arrastar_base_final = True
                     except AtualizacaoRecusada as exc:

@@ -428,6 +428,31 @@ def main():
     assert evidencias_apuracao2 == ["fake_bloco_metas.png"], evidencias_apuracao2
     print("  OK: sem sessão pré-aberta, abre uma só pra esse fim e captura o print igual.\n")
 
+    print("== conferindo filter_value_override (janela alargada pro mês anterior, bug real 2026-10-01) ==")
+
+    janelas_recebidas = []
+
+    def fake_baixar_com_janela(report_name, tile_key, *, filter_value_override=None, **kwargs):
+        assert report_name == "comissao_avista"
+        janelas_recebidas.append(filter_value_override)
+        return pd.DataFrame({
+            "Anomes Apuracao": ["202609"],
+            "Cd Contrato": ["AU950"],
+        })
+
+    excel_sync.baixar_looker_bruto = fake_baixar_com_janela
+    atualizar_db_apuracaoavista(wb, "202609", filter_value_override="3 months")
+    assert janelas_recebidas == ["3 months"], (
+        f"esperava filter_value_override='3 months' repassado pro baixar_looker_bruto, veio {janelas_recebidas}"
+    )
+    janelas_recebidas.clear()
+    atualizar_db_apuracaoavista(wb, "202609")
+    assert janelas_recebidas == [None], (
+        f"sem override explícito, esperava None (usa o padrão '2 months' do portal_selectors.json), "
+        f"veio {janelas_recebidas}"
+    )
+    print("  OK: filter_value_override chega até baixar_looker_bruto; sem passar, fica None (padrão).\n")
+
     print("\nTODOS OS TESTES PASSARAM.")
 
 
