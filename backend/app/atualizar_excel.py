@@ -17,6 +17,16 @@ pra db_apuracaoavista/db_mercado —, nessa ordem, e arrasta o base_final no
 final — faz 1 login só no portal, reaproveitado por todos os downloads (ver
 `sessao_looker` em `excel_sync.py`), em vez de logar de novo a cada aba.
 
+Até o dia 05 de cada mês, `--tudo` TAMBÉM reprocessa o MÊS ANTERIOR em
+db_apuracaoavista/db_mercado (antes do mês corrente) — achado real em
+2026-10-01: essas duas apurações saem do Looker com alguns dias de atraso
+em relação à virada do mês, e como a aba só aceita mexer no ÚLTIMO bloco,
+pular direto pro mês corrente no dia 1º travaria o mês anterior pra sempre
+(nunca mais daria pra corrigir os números finais dele). Reprocessar os
+primeiros dias também serve como "check" de fechamento: o relatório final
+mostra a contagem de db_apuracaoavista x PROPOSTA PAGA de db_pagasanalitico
+pro mês anterior de novo, não só pro mês corrente.
+
 Sempre que `db_apuracaoavista` for atualizada (isoladamente ou via `--tudo`),
 o script arrasta o `base_final` automaticamente em seguida — é a única aba
 que depende disso (ver docstring de `excel_sync.py`).
@@ -34,7 +44,7 @@ import argparse
 import logging
 import shutil
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import openpyxl
@@ -113,6 +123,12 @@ def main() -> None:
         if args.tudo:
             hoje = date.today()
             anomes_atual = f"{hoje.year}{hoje.month:02d}"
+            primeiro_dia_mes_atual = hoje.replace(day=1)
+            anomes_anterior = (primeiro_dia_mes_atual - timedelta(days=1)).strftime("%Y%m")
+            # Até o dia 05: mês anterior ainda pode estar "fechando" no
+            # Looker — ver docstring do módulo (achado real em 2026-10-01).
+            fechar_mes_anterior = hoje.day <= 5
+
             # 1 login só, reaproveitado pros 3 downloads (ver sessao_looker em
             # excel_sync.py) — antes disso, --tudo fazia 3 logins inteiros.
             with sessao_looker() as sessao:
@@ -122,6 +138,33 @@ def main() -> None:
                 resultados.extend(
                     atualizar_db_pagasanalitico_ultimos_dias(wb, hoje, sessao=sessao, evidencias=evidencias)
                 )
+
+                if fechar_mes_anterior:
+                    # SEMPRE antes do mês corrente — as duas abas só aceitam
+                    # mexer no ÚLTIMO bloco, então processar o corrente
+                    # primeiro travaria o anterior. Sem evidência aqui: o
+                    # print do 'Bloco de Metas' já sai 1x mais abaixo, não
+                    # precisa duplicar.
+                    try:
+                        resultados.append(
+                            atualizar_db_apuracaoavista(wb, anomes_anterior, sessao=sessao)
+                        )
+                        precisa_arrastar_base_final = True
+                    except AtualizacaoRecusada as exc:
+                        logger.info(
+                            "db_apuracaoavista: mês anterior (%s) não reprocessado — %s",
+                            anomes_anterior,
+                            exc,
+                        )
+                    try:
+                        resultados.append(atualizar_db_mercado(wb, anomes_anterior, sessao=sessao))
+                    except AtualizacaoRecusada as exc:
+                        logger.info(
+                            "db_mercado: mês anterior (%s) não reprocessado — %s",
+                            anomes_anterior,
+                            exc,
+                        )
+
                 resultados.append(
                     atualizar_db_apuracaoavista(wb, anomes_atual, sessao=sessao, evidencias=evidencias)
                 )
