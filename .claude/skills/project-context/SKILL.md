@@ -656,9 +656,15 @@ escrever 1x só — os `atualizar_db_*` originais continuam existindo como wrapp
 (usados nos testes do sandbox). Cada conta tem seu próprio perfil de navegador salvo (variáveis
 `.env`: `C6_PORTAL_USERNAME_002921`/`_PASSWORD_002921` e `_003881`/`_003881` — a aprovação de
 dispositivo na 1ª vez é por conta, 2x no total). Prints de evidência saem 1x por conta (nome do
-arquivo identifica qual é qual). Testado no sandbox com 2 contas fake; **ainda não rodado contra o
-portal real** — primeira execução real precisa confirmar que os dados das 2 contas não se sobrepõem
-(a premissa assumida) e que a aprovação de dispositivo da 2ª conta funciona normalmente.
+arquivo identifica qual é qual). **Validado contra o portal real em 2026-10-13** 🎉: `--tudo` rodou de ponta a ponta sem erro, login
+nas 2 contas, download+empilhamento das 3 abas, 6 prints de evidência (3 por conta) + 3 do
+ACOMP_DIARIO, planilha salva. Dois bugs reais achados e corrigidos no processo: (1)
+`database_url`/`jwt_secret_key`/`google_oauth_client_id` eram obrigatórios em `Settings` mesmo
+não sendo usados pela automação local — travava `Settings()` sem valor fake, corrigido (viraram
+opcionais); (2) `parse_looker_number` quebrava em valor negativo formatado `"-R$ 24500.00"` (sinal
+colado no "R$", espaço antes do número — formato só visto na conta 003881) — corrigido removendo
+todo espaço da string antes de converter. Números de outubro ainda não foram validados visualmente
+pelo usuário contra o Excel (pedido feito, resposta pendente).
 
 ## Como uma sessão nova deve retomar
 
