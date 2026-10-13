@@ -18,7 +18,14 @@ _MULTIPLICADOR_POR_SUFIXO = {"mil": 1_000, "mm": 1_000_000, "mi": 1_000_000}
 def parse_looker_number(raw: object) -> float:
     if isinstance(raw, (int, float)):
         return float(raw)
-    cleaned = str(raw).replace("R$", "").strip()
+    # Achado real em 2026-10-13 (conta Looker "003881", 1ª vez que um valor
+    # negativo apareceu formatado como "-R$ 24500.00" — sinal colado no "R$",
+    # espaço antes do número): remover "R$" sem remover o espaço que sobra
+    # deixava "- 24500.00", que `float()` rejeita (não aceita espaço entre o
+    # sinal e o dígito). `.replace(" ", "")` resolve esse caso e qualquer
+    # outro espaço perdido no meio do número — nunca vimos espaço de verdade
+    # dentro de um valor numérico do Looker (milhar usa vírgula, não espaço).
+    cleaned = str(raw).replace("R$", "").replace(" ", "").strip()
     match = _ABREVIACAO_RE.match(cleaned)
     if match:
         numero, sufixo = match.groups()

@@ -577,6 +577,19 @@ def main():
     assert len(dado_sem_anterior["apuracaoavista_atual"]) == 2
     print("  OK: sem catch-up pedido, os campos '*_anterior' vêm None e o resto funciona igual.\n")
 
+    print("== conferindo valor negativo '-R$ 24500.00' (bug real 2026-10-13, conta 003881) ==")
+
+    from app.services.connectors.base import parse_looker_number
+
+    valor_negativo = parse_looker_number("-R$ 24500.00")
+    assert valor_negativo == -24500.0, (
+        f"esperava -24500.0 (sinal colado no 'R$', espaço antes do número — formato real visto "
+        f"na conta 003881), veio {valor_negativo!r}"
+    )
+    assert excel_sync._normalizar_valor_bruto("-R$ 24500.00") == -24500.0
+    print("  OK: '-R$ 24500.00' vira -24500.0 (antes quebrava com ValueError por causa do espaço "
+          "deixado entre o sinal e o número depois de remover 'R$').\n")
+
     print("\nTODOS OS TESTES PASSARAM.")
 
 
