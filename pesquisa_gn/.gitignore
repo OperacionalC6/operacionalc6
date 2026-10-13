@@ -1,2 +1,4 @@
 .streamlit/secrets.toml
 data/
+# Credenciais do Google (nunca enviar ao GitHub)
+*.json
