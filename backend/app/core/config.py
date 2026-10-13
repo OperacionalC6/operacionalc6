@@ -10,23 +10,32 @@ class Settings(BaseSettings):
     environment: str = "development"
     log_level: str = "INFO"
 
-    database_url: str
+    # database_url/jwt_secret_key/google_oauth_client_id: usados só pelo app
+    # web antigo (FastAPI+Postgres), DESATIVADO em 2026-09-24 (pivô pra
+    # automação local em Excel — ver skill project-context). Opcionais desde
+    # 2026-10-13: exigi-los sempre travava QUALQUER script local (inclusive
+    # atualizar_excel.py, que nunca os usa) se não estivessem setados como
+    # variável de ambiente — achado real do usuário, que precisou inventar
+    # valor fake só pra `Settings()` construir.
+    database_url: str | None = None
 
     @field_validator("database_url")
     @classmethod
-    def _use_psycopg3_driver(cls, v: str) -> str:
+    def _use_psycopg3_driver(cls, v: str | None) -> str | None:
         # Provedores gerenciados (Render, etc.) entregam a connection string sem
         # driver explícito, e às vezes no esquema curto "postgres://" (não só
         # "postgresql://") — em ambos os casos o SQLAlchemy interpreta como
         # psycopg2 por padrão, mas usamos psycopg3 (ver requirements.txt). Sem
         # isso, tanto a API quanto as migrations do Alembic falham ao conectar.
+        if v is None:
+            return v
         if v.startswith("postgres://"):
             return v.replace("postgres://", "postgresql+psycopg://", 1)
         if v.startswith("postgresql://"):
             return v.replace("postgresql://", "postgresql+psycopg://", 1)
         return v
 
-    jwt_secret_key: str
+    jwt_secret_key: str | None = None
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
@@ -34,7 +43,7 @@ class Settings(BaseSettings):
     # ID do OAuth Client (tipo "Web application") criado no Google Cloud Console.
     # Usado tanto pelo frontend (botão "Entrar com Google") quanto pelo backend
     # (validar que o token recebido foi mesmo emitido pra este app). Ver security-access skill.
-    google_oauth_client_id: str
+    google_oauth_client_id: str | None = None
 
     backend_cors_origins: list[str] = ["http://localhost:3000"]
 
