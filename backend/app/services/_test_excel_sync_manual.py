@@ -10,6 +10,8 @@ Roda com: python -m app.services._test_excel_sync_manual
 import sys
 from copy import copy
 from datetime import date, datetime
+from pathlib import Path
+from types import SimpleNamespace
 
 import openpyxl
 import pandas as pd
@@ -18,6 +20,7 @@ from openpyxl.styles import Font, PatternFill
 sys.path.insert(0, ".")
 
 import app.services.excel_sync as excel_sync
+from app.services.connectors.portal_rpa import ContaLooker
 from app.services.excel_sync import (
     AtualizacaoRecusada,
     arrastar_base_final,
@@ -341,8 +344,8 @@ def main():
 
     chamadas_evidencia = []
 
-    def fake_capturar_evidencias_producao(page, evidencias):
-        chamadas_evidencia.append(page)
+    def fake_capturar_evidencias_producao(sessao, evidencias):
+        chamadas_evidencia.append(sessao)
         evidencias.append("fake_evidencia.png")
 
     excel_sync._capturar_evidencias_producao = fake_capturar_evidencias_producao
@@ -418,7 +421,7 @@ def main():
         def __exit__(self, *args):
             return False
 
-    excel_sync.sessao_looker = lambda: _SessaoLookerFakeCtx()
+    excel_sync.sessao_looker = lambda conta: _SessaoLookerFakeCtx()
     evidencias_apuracao2 = []
     atualizar_db_apuracaoavista(wb, "202609", evidencias=evidencias_apuracao2)
     assert len(chamadas_evidencia_apuracao) == 1, (
@@ -452,6 +455,127 @@ def main():
         f"veio {janelas_recebidas}"
     )
     print("  OK: filter_value_override chega até baixar_looker_bruto; sem passar, fica None (padrão).\n")
+
+    print("== testando baixar_de_todas_contas (empilha 1 download de cada conta — pedido 2026-10-13) ==")
+
+    contas_fake = [
+        ContaLooker(rotulo="AAA", usuario="u1", senha="s1", perfil_dir=Path("/tmp/fake_perfil_AAA")),
+        ContaLooker(rotulo="BBB", usuario="u2", senha="s2", perfil_dir=Path("/tmp/fake_perfil_BBB")),
+    ]
+    excel_sync.contas_looker = lambda: contas_fake
+
+    class _SessaoFakeCtx:
+        def __init__(self, conta):
+            self._conta = conta
+
+        def __enter__(self):
+            return (SimpleNamespace(_conta=self._conta), f"page_{self._conta.rotulo}")
+
+        def __exit__(self, *args):
+            return False
+
+    excel_sync.sessao_looker = lambda conta: _SessaoFakeCtx(conta)
+
+    df_empilhado = excel_sync.baixar_de_todas_contas(
+        lambda sessao: pd.DataFrame({"rotulo": [sessao[0]._conta.rotulo], "valor": [10.0]})
+    )
+    assert list(df_empilhado["rotulo"]) == ["AAA", "BBB"], (
+        f"esperava 1 linha de cada conta, na ordem de contas_looker(), veio {list(df_empilhado['rotulo'])}"
+    )
+    print("  OK: baixar_de_todas_contas abre sessão em cada conta e empilha o resultado.\n")
+
+    print("== testando baixar_tudo_multi_conta (fluxo --tudo com 2 contas, pedido 2026-10-13) ==")
+
+    chamadas_evidencia_producao: list[str] = []
+
+    def fake_cap_producao(sessao, evidencias):
+        rotulo = sessao[0]._conta.rotulo
+        chamadas_evidencia_producao.append(rotulo)
+        evidencias.append(f"producao_{rotulo}.png")
+
+    excel_sync._capturar_evidencias_producao = fake_cap_producao
+
+    chamadas_evidencia_bloco: list[str] = []
+
+    def fake_cap_bloco(sessao, evidencias):
+        rotulo = sessao[0]._conta.rotulo
+        chamadas_evidencia_bloco.append(rotulo)
+        evidencias.append(f"bloco_metas_{rotulo}.png")
+
+    excel_sync._capturar_evidencia_apuracao_parceiro = fake_cap_bloco
+
+    def fake_baixar_multi_conta(
+        report_name, tile_key, *, filter_query_override=None, filter_value_override=None, sessao=None
+    ):
+        rotulo = sessao[0]._conta.rotulo
+        if report_name == "acompanhamento_veiculos":
+            m = _re.search(r"Dt\+Relatorio\+Date=(\d{4}-\d{2}-\d{2})", filter_query_override)
+            dia_pedido = m.group(1)
+            dia_num = int(dia_pedido[-2:])
+            return pd.DataFrame({
+                "ID Proposta": [f"{rotulo}{dia_num}"],
+                "Dt Relatório": [datetime.strptime(dia_pedido, "%Y-%m-%d")],
+                "Lojista": [f"loja_{rotulo}"],
+                "Status Proposta": ["PROPOSTA PAGA"],
+                "Cd Contrato": [f"C{rotulo}{dia_num}"],
+                "Vl Financiamento": [100.0],
+            })
+        if report_name == "comissao_avista":
+            # Looker não filtra server-side pelo mês exato (ver docstring de
+            # _baixar_apuracaoavista) — devolve os 2 meses sempre, o filtro
+            # fica por conta de quem chama.
+            return pd.DataFrame({
+                "Anomes Apuracao": ["202610", "202609"],
+                "Cd Contrato": [f"AV_ATUAL_{rotulo}", f"AV_ANT_{rotulo}"],
+            })
+        if report_name == "painel_visita_mercado":
+            return pd.DataFrame({
+                "Nome Gp": [rotulo, rotulo],
+                "CNPJ Loja": ["111", "111"],
+                "Mês": [datetime(2026, 10, 1), datetime(2026, 9, 1)],
+                "Produção C6": [100.0, 200.0],
+            })
+        raise AssertionError(f"relatório inesperado no teste multi-conta: {report_name}")
+
+    excel_sync.baixar_looker_bruto = fake_baixar_multi_conta
+
+    dado = excel_sync.baixar_tudo_multi_conta(
+        date(2026, 10, 3),
+        anomes_atual="202610",
+        anomes_anterior="202609",
+        quantidade_dias_pagasanalitico=2,
+    )
+    print({k: (v if not isinstance(v, (pd.DataFrame, dict)) else "...") for k, v in dado.items()})
+
+    assert len(dado["pagasanalitico"]) == 2, f"esperava 2 dias, veio {len(dado['pagasanalitico'])}"
+    for dia, df_dia in dado["pagasanalitico"].items():
+        assert len(df_dia) == 2, f"dia {dia}: esperava 2 linhas (1 por conta), veio {len(df_dia)}"
+    assert len(dado["apuracaoavista_atual"]) == 2, "apuracaoavista_atual deveria ter 1 linha por conta"
+    assert len(dado["apuracaoavista_anterior"]) == 2, "apuracaoavista_anterior deveria ter 1 linha por conta"
+    assert len(dado["mercado_atual"]) == 2, "mercado_atual deveria ter 1 linha por conta"
+    assert len(dado["mercado_anterior"]) == 2, "mercado_anterior deveria ter 1 linha por conta"
+    assert chamadas_evidencia_producao == ["AAA", "BBB"], (
+        f"esperava 1 print de Produção por conta, na ordem de contas_looker(), veio {chamadas_evidencia_producao}"
+    )
+    assert chamadas_evidencia_bloco == ["AAA", "BBB"], (
+        f"esperava 1 print de Bloco de Metas por conta, na ordem de contas_looker(), veio {chamadas_evidencia_bloco}"
+    )
+    assert len(dado["evidencias"]) == 4, f"esperava 4 prints (2 por conta), veio {len(dado['evidencias'])}"
+    print(
+        "  OK: baixa das 2 contas, empilha cada relatório/período, e tira evidência 1x por conta "
+        "(4 prints no total).\n"
+    )
+
+    print("== mesmo teste, sem catch-up do mês anterior (anomes_anterior=None) ==")
+    chamadas_evidencia_producao.clear()
+    chamadas_evidencia_bloco.clear()
+    dado_sem_anterior = excel_sync.baixar_tudo_multi_conta(
+        date(2026, 10, 3), anomes_atual="202610", anomes_anterior=None, quantidade_dias_pagasanalitico=2,
+    )
+    assert dado_sem_anterior["apuracaoavista_anterior"] is None
+    assert dado_sem_anterior["mercado_anterior"] is None
+    assert len(dado_sem_anterior["apuracaoavista_atual"]) == 2
+    print("  OK: sem catch-up pedido, os campos '*_anterior' vêm None e o resto funciona igual.\n")
 
     print("\nTODOS OS TESTES PASSARAM.")
 

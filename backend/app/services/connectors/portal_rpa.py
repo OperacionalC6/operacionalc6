@@ -34,6 +34,7 @@ import json
 import logging
 import os
 import time
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
@@ -63,13 +64,56 @@ _CONFIG_PATH = Path(__file__).parent / "portal_selectors.json"
 _BACKEND_DIR = Path(__file__).resolve().parents[3]
 _ARTIFACTS_DIR = Path(os.environ.get("RPA_ARTIFACTS_DIR", str(_BACKEND_DIR / "artifacts")))
 _HEADLESS = os.environ.get("HEADLESS", "true").lower() != "false"
-_BROWSER_PROFILE_DIR = Path(
+_BROWSER_PROFILE_BASE_DIR = Path(
     os.environ.get("RPA_BROWSER_PROFILE_DIR", str(_BACKEND_DIR / "browser_profile"))
 )
 
 
 class PortalLoginError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class ContaLooker:
+    """Um dos 2 acessos ao Looker — a partir de out/26 a informação do
+    negócio foi dividida em 2 logins diferentes (parceiros "002921" e
+    "003881"), cada um só enxergando a fatia dele; pra ter o dado completo é
+    preciso logar nos dois e empilhar o resultado (ver `excel_sync.py`/
+    `atualizar_excel.py`). Pedido do usuário em 2026-10-13. Cada conta usa um
+    perfil de navegador PRÓPRIO (decisão do usuário) — evita qualquer mistura
+    de cookie/sessão entre os dois logins; isso também significa que a
+    aprovação manual de dispositivo (1ª vez, HEADLESS=false) precisa
+    acontecer 1x PRA CADA conta, não só 1x no total."""
+
+    rotulo: str  # só usado em nome de arquivo/log — NÃO é segredo
+    usuario: str | None
+    senha: str | None
+    perfil_dir: Path
+
+
+def _perfil_dir_para_conta(rotulo: str) -> Path:
+    return _BROWSER_PROFILE_BASE_DIR.with_name(f"{_BROWSER_PROFILE_BASE_DIR.name}_{rotulo}")
+
+
+def contas_looker() -> list[ContaLooker]:
+    """Lê as credenciais das 2 contas do .env na hora de usar (não no import
+    do módulo) — assim um .env incompleto só derruba quem realmente tentar
+    logar, não qualquer código que só importa este arquivo (ex.: os testes
+    do sandbox, que nunca instanciam `PortalRpaConnector` de verdade)."""
+    return [
+        ContaLooker(
+            rotulo="002921",
+            usuario=settings.c6_portal_username_002921,
+            senha=settings.c6_portal_password_002921,
+            perfil_dir=_perfil_dir_para_conta("002921"),
+        ),
+        ContaLooker(
+            rotulo="003881",
+            usuario=settings.c6_portal_username_003881,
+            senha=settings.c6_portal_password_003881,
+            perfil_dir=_perfil_dir_para_conta("003881"),
+        ),
+    ]
 
 
 def _accept_dialog_logged(dialog) -> None:
@@ -93,15 +137,21 @@ def _accept_dialog_logged(dialog) -> None:
 class PortalRpaConnector(DataConnector):
     source_name = "portal_rpa"
 
-    def __init__(self) -> None:
-        if not (settings.c6_portal_username and settings.c6_portal_password):
+    def __init__(self, conta: ContaLooker | None = None) -> None:
+        # `conta=None` preserva o uso antigo (1 conta só) pra quem ainda
+        # instancia sem argumento (ex.: `fetch()`/`_run_cli`, caminho legado
+        # não usado pela automação local atual — ver skill project-context)
+        # — cai na 1ª conta configurada.
+        self._conta = conta or contas_looker()[0]
+        if not (self._conta.usuario and self._conta.senha):
             raise RuntimeError(
-                "Credenciais do portal não configuradas. Defina C6_PORTAL_USERNAME "
-                "e C6_PORTAL_PASSWORD no .env (usuário de automação dedicado)."
+                f"Credenciais da conta '{self._conta.rotulo}' não configuradas. Defina "
+                f"C6_PORTAL_USERNAME_{self._conta.rotulo} e C6_PORTAL_PASSWORD_{self._conta.rotulo} "
+                "no .env (usuário de automação dedicado)."
             )
         self._config = json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
         _ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
-        _BROWSER_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+        self._conta.perfil_dir.mkdir(parents=True, exist_ok=True)
 
     def fetch(self, *, date_from: date, date_to: date) -> list[ConnectorRecord]:
         """
@@ -120,7 +170,7 @@ class PortalRpaConnector(DataConnector):
 
         with sync_playwright() as playwright:
             context = playwright.chromium.launch_persistent_context(
-                str(_BROWSER_PROFILE_DIR),
+                str(self._conta.perfil_dir),
                 headless=_HEADLESS,
                 accept_downloads=True,
                 # Evita o popup nativo "Salvar senha?" do Chrome, que interrompe
@@ -216,8 +266,8 @@ class PortalRpaConnector(DataConnector):
         page.goto(settings.c6_portal_base_url, wait_until="domcontentloaded")
         page.locator(login_cfg["username_selector"]).wait_for(state="visible", timeout=20000)
 
-        page.fill(login_cfg["username_selector"], settings.c6_portal_username)
-        page.fill(login_cfg["password_selector"], settings.c6_portal_password)
+        page.fill(login_cfg["username_selector"], self._conta.usuario)
+        page.fill(login_cfg["password_selector"], self._conta.senha)
 
         # Confere que a senha realmente "colou" no campo — achado em produção
         # (2026-09-24, ver skill rpa-conventions): o campo de senha do
@@ -232,7 +282,8 @@ class PortalRpaConnector(DataConnector):
                 "O campo de senha ficou vazio logo depois de preenchido — o portal pode "
                 "estar rejeitando algum caractere da senha (ver 'caracteres perigosos' no "
                 "HTML do formulário) ou houve algum problema ao digitar. Confira se a senha "
-                "em C6_PORTAL_PASSWORD tem símbolos incomuns e considere testar uma sem eles."
+                f"em C6_PORTAL_PASSWORD_{self._conta.rotulo} tem símbolos incomuns e "
+                "considere testar uma sem eles."
             )
 
         if login_cfg.get("totp_selector") and settings.c6_portal_totp_secret:
@@ -278,7 +329,10 @@ class PortalRpaConnector(DataConnector):
         download = download_info.value
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        dest = _ARTIFACTS_DIR / f"{report_cfg['name']}_{timestamp}{Path(download.suggested_filename).suffix}"
+        dest = (
+            _ARTIFACTS_DIR
+            / f"{report_cfg['name']}_{self._conta.rotulo}_{timestamp}{Path(download.suggested_filename).suffix}"
+        )
         download.save_as(dest)
         logger.info("Relatório '%s' baixado em %s", report_cfg["name"], dest)
         return dest
@@ -391,14 +445,15 @@ class PortalRpaConnector(DataConnector):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         dest = (
             _ARTIFACTS_DIR
-            / f"{report_cfg['name']}_{tile['key']}_{timestamp}"
+            / f"{report_cfg['name']}_{tile['key']}_{self._conta.rotulo}_{timestamp}"
             f"{Path(download.suggested_filename).suffix}"
         )
         download.save_as(dest)
         logger.info(
-            "Tile '%s' do relatório Looker '%s' baixado em %s",
+            "Tile '%s' do relatório Looker '%s' (conta %s) baixado em %s",
             tile["name"],
             report_cfg["name"],
+            self._conta.rotulo,
             dest,
         )
         return dest
@@ -480,13 +535,13 @@ class PortalRpaConnector(DataConnector):
             )
         return records
 
-    @staticmethod
-    def _save_failure_artifacts(page: Page) -> None:
+    def _save_failure_artifacts(self, page: Page) -> None:
         """Salva screenshot/HTML da página no momento da falha, para debug — nunca loga credenciais."""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            page.screenshot(path=str(_ARTIFACTS_DIR / f"failure_{timestamp}.png"), full_page=True)
-            (_ARTIFACTS_DIR / f"failure_{timestamp}.html").write_text(page.content(), encoding="utf-8")
+            rotulo = self._conta.rotulo
+            page.screenshot(path=str(_ARTIFACTS_DIR / f"failure_{rotulo}_{timestamp}.png"), full_page=True)
+            (_ARTIFACTS_DIR / f"failure_{rotulo}_{timestamp}.html").write_text(page.content(), encoding="utf-8")
         except Exception:
             logger.exception("Não foi possível salvar artefatos de falha do RPA.")
 
@@ -508,10 +563,11 @@ def _run_cli() -> None:
     e runs futuras (inclusive headless, num servidor) devem reaproveitar o
     mesmo "dispositivo" sem pedir de novo.
 
-    Credenciais vêm do .env (C6_PORTAL_USERNAME / C6_PORTAL_PASSWORD) — nunca
+    Credenciais vêm do .env (C6_PORTAL_USERNAME_002921 / C6_PORTAL_PASSWORD_002921,
+    a 1ª das 2 contas configuradas — ver `contas_looker()` acima) — nunca
     passe usuário/senha por linha de comando ou variável exposta em logs.
-    Nunca commite a pasta de RPA_BROWSER_PROFILE_DIR — ela guarda cookies de
-    sessão reais.
+    Nunca commite a pasta de RPA_BROWSER_PROFILE_DIR (nem as variantes
+    "_002921"/"_003881" dela) — guardam cookies de sessão reais.
     """
     import argparse
 

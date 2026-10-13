@@ -53,10 +53,11 @@ from playwright.sync_api import Page, sync_playwright
 
 from app.services.connectors.portal_rpa import (
     _ARTIFACTS_DIR,
-    _BROWSER_PROFILE_DIR,
     _HEADLESS,
+    ContaLooker,
     PortalRpaConnector,
     _accept_dialog_logged,
+    contas_looker,
 )
 
 logger = logging.getLogger(__name__)
@@ -91,17 +92,19 @@ def _find_tile_cfg(report_cfg: dict, tile_key: str) -> dict:
 
 
 @contextmanager
-def sessao_looker():
-    """Abre UMA sessão autenticada no portal (login + bootstrap do Looker) e
-    entrega `(connector, page)` pra quem quiser baixar VÁRIAS tiles sem logar
-    de novo a cada uma — passe o resultado pro parâmetro `sessao` de
-    `baixar_looker_bruto`. Usado pelo `--tudo` do CLI: sem isso, atualizar as
-    3 abas de uma vez fazia 3 logins inteiros (um por download), quando dava
-    pra fazer só 1."""
-    connector = PortalRpaConnector()
+def sessao_looker(conta: ContaLooker):
+    """Abre UMA sessão autenticada no portal, NUMA conta específica (login +
+    bootstrap do Looker) e entrega `(connector, page)` pra quem quiser baixar
+    VÁRIAS tiles sem logar de novo a cada uma — passe o resultado pro
+    parâmetro `sessao` de `baixar_looker_bruto`. Usado pelo `--tudo` do CLI:
+    sem isso, atualizar as abas de uma vez fazia 1 login por download, quando
+    dava pra fazer só 1 por CONTA (ver `contas_looker()`/`ContaLooker` em
+    `portal_rpa.py` — desde out/26 a informação do negócio foi dividida em 2
+    acessos Looker diferentes, cada um com seu próprio perfil de navegador)."""
+    connector = PortalRpaConnector(conta)
     with sync_playwright() as playwright:
         context = playwright.chromium.launch_persistent_context(
-            str(_BROWSER_PROFILE_DIR),
+            str(conta.perfil_dir),
             headless=_HEADLESS,
             accept_downloads=True,
             args=["--disable-save-password-bubble"],
@@ -117,6 +120,22 @@ def sessao_looker():
             raise
         finally:
             context.close()
+
+
+def baixar_de_todas_contas(baixar_um) -> pd.DataFrame:
+    """Chama `baixar_um(sessao)` pra CADA conta Looker configurada
+    (`contas_looker()`), abrindo e fechando a sessão dela, e empilha
+    (concat) os DataFrames resultantes — pedido do usuário em 2026-10-13
+    (informação do negócio dividida em 2 acessos Looker desde out/26, cada
+    um só enxergando a fatia dele). Útil pro uso ISOLADO de 1 aba só
+    (`--aba ... --dia/--mes` no CLI); o fluxo `--tudo` usa
+    `baixar_tudo_multi_conta`, mais eficiente (1 sessão por conta cobre
+    TODOS os downloads daquela execução, não só 1)."""
+    dfs = []
+    for conta in contas_looker():
+        with sessao_looker(conta) as sessao:
+            dfs.append(baixar_um(sessao))
+    return pd.concat(dfs, ignore_index=True)
 
 
 def baixar_looker_bruto(
@@ -167,7 +186,7 @@ def baixar_looker_bruto(
         connector, page = sessao
         downloaded = connector._download_looker_tiles(page, report_cfg)
     else:
-        with sessao_looker() as (connector, page):
+        with sessao_looker(contas_looker()[0]) as (connector, page):
             downloaded = connector._download_looker_tiles(page, report_cfg)
 
     file_path, _tile = downloaded[0]
@@ -384,25 +403,26 @@ def _ir_para_aba_producao(page: Page) -> None:
     page.wait_for_timeout(15000)
 
 
-def _capturar_evidencia_producao_topo(page: Page) -> Path:
+def _capturar_evidencia_producao_topo(page: Page, rotulo_conta: str) -> Path:
     """Print do topo da aba "Produção" (tiles "Produção Mensal" e "Produção x
     Dia", lado a lado) — pedido explícito do usuário em 2026-09-29, com
     imagem de referência mostrando exatamente esse recorte. É a visão que já
     aparece assim que a aba carrega, sem precisar rolar nem abrir tela
     cheia — só tira o mouse de cima do gráfico antes (evita balão de hover
     de um clique anterior aparecer no print, mesmo achado do print antigo de
-    "Digitação x Dia")."""
+    "Digitação x Dia"). `rotulo_conta` vai no nome do arquivo (desde
+    2026-10-13, cada conta Looker gera o seu — ver `contas_looker()`)."""
     page.mouse.move(0, 0)
     page.evaluate("window.scrollTo(0, 0)")
     page.wait_for_timeout(300)
     _EVIDENCIAS_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dest = _EVIDENCIAS_DIR / f"acompanhamento_veiculos_producao_{timestamp}.png"
+    dest = _EVIDENCIAS_DIR / f"acompanhamento_veiculos_producao_{rotulo_conta}_{timestamp}.png"
     page.screenshot(path=str(dest))
     return dest
 
 
-def _capturar_evidencia_comparativo_producao(page: Page) -> Path:
+def _capturar_evidencia_comparativo_producao(page: Page, rotulo_conta: str) -> Path:
     """Tile 'Produção - Comparativo Mensal', mais embaixo na aba 'Produção'
     (pedido original em 2026-09-25): só carrega o dado quando scrollada até
     ficar visível (lazy load do Looker). Abre "Tile actions" > "View" >
@@ -431,7 +451,10 @@ def _capturar_evidencia_comparativo_producao(page: Page) -> Path:
 
     _EVIDENCIAS_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dest = _EVIDENCIAS_DIR / f"acompanhamento_veiculos_producao_comparativo_mensal_{timestamp}.png"
+    dest = (
+        _EVIDENCIAS_DIR
+        / f"acompanhamento_veiculos_producao_comparativo_mensal_{rotulo_conta}_{timestamp}.png"
+    )
     # Sem full_page=True nem reset de scroll: em tela cheia a tile já ocupa a
     # viewport inteira, mexer no scroll da página por baixo pode até fechar
     # o modo tela cheia.
@@ -444,14 +467,20 @@ def _capturar_evidencia_comparativo_producao(page: Page) -> Path:
     return dest
 
 
-def _capturar_evidencias_producao(page: Page, evidencias: list[Path]) -> None:
+def _capturar_evidencias_producao(
+    sessao: tuple[PortalRpaConnector, Page], evidencias: list[Path]
+) -> None:
     """Os 2 prints de evidência que sobraram — pedido explícito do usuário em
     2026-09-29, depois de ver que os outros 3 (Digitação x Dia, aba Produção
     inteira, e os prints de comissao_avista/painel_visita_mercado) saíam
     incompletos ("No results", tabela sem terminar de carregar): eram
     tirados rápido demais e não interessavam. Removidos. Cada print aqui
     falha de forma independente (um não bloqueia o outro) — evidência é um
-    extra, não faz parte da lógica de dado."""
+    extra, não faz parte da lógica de dado. Recebe a `sessao` inteira (não só
+    `page`) desde 2026-10-13 pra saber de qual CONTA tirar o print (nome do
+    arquivo), já que agora há 2 acessos Looker diferentes."""
+    connector, page = sessao
+    rotulo_conta = connector._conta.rotulo
     try:
         _ir_para_aba_producao(page)
     except Exception as exc:
@@ -464,7 +493,7 @@ def _capturar_evidencias_producao(page: Page, evidencias: list[Path]) -> None:
         return
 
     try:
-        evidencias.append(_capturar_evidencia_producao_topo(page))
+        evidencias.append(_capturar_evidencia_producao_topo(page, rotulo_conta))
     except Exception as exc:
         logger.warning(
             "Não consegui tirar o print do topo da aba 'Produção' (não afeta a "
@@ -473,7 +502,7 @@ def _capturar_evidencias_producao(page: Page, evidencias: list[Path]) -> None:
         )
 
     try:
-        evidencias.append(_capturar_evidencia_comparativo_producao(page))
+        evidencias.append(_capturar_evidencia_comparativo_producao(page, rotulo_conta))
     except Exception as exc:
         logger.warning(
             "Não consegui tirar o print em tela cheia de 'Produção - Comparativo Mensal' "
@@ -504,7 +533,7 @@ def _ir_para_dashboard_apuracao_parceiro_resumo(
     ).wait_for(state="visible", timeout=30000)
 
 
-def _capturar_evidencia_bloco_metas(page: Page) -> Path:
+def _capturar_evidencia_bloco_metas(page: Page, rotulo_conta: str) -> Path:
     """Tile "Resumo - Bloco de Metas" (aria-label real confirmado em
     2026-09-01/02 — ver `_nome_nota` em portal_selectors.json — diferente do
     texto visível "Bloco de Metas"), em tela cheia — pedido explícito do
@@ -534,7 +563,7 @@ def _capturar_evidencia_bloco_metas(page: Page) -> Path:
 
     _EVIDENCIAS_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dest = _EVIDENCIAS_DIR / f"apuracao_parceiro_resumo_bloco_metas_{timestamp}.png"
+    dest = _EVIDENCIAS_DIR / f"apuracao_parceiro_resumo_bloco_metas_{rotulo_conta}_{timestamp}.png"
     page.mouse.move(0, 0)
     page.wait_for_timeout(200)
     page.screenshot(path=str(dest))
@@ -564,7 +593,7 @@ def _capturar_evidencia_apuracao_parceiro(
         return
 
     try:
-        evidencias.append(_capturar_evidencia_bloco_metas(page))
+        evidencias.append(_capturar_evidencia_bloco_metas(page, connector._conta.rotulo))
     except Exception as exc:
         logger.warning(
             "Não consegui tirar o print em tela cheia de 'Bloco de Metas' "
@@ -593,18 +622,54 @@ def _baixar_pagasanalitico_com_evidencias(
                 "(o dashboard não renderiza a barra de abas sem dado; não afeta a atualização)."
             )
         else:
-            _, page = sessao
-            _capturar_evidencias_producao(page, evidencias)
+            _capturar_evidencias_producao(sessao, evidencias)
     return df
 
 
-def atualizar_db_pagasanalitico(
-    wb,
+def _baixar_pagasanalitico_dia(
     dia: date,
     *,
     sessao: tuple[PortalRpaConnector, Page] | None = None,
     evidencias: list[Path] | None = None,
-) -> dict:
+) -> pd.DataFrame:
+    """Só a parte Looker (download + filtro + evidência opcional) de 1 dia —
+    NÃO mexe na planilha. Extraído de `atualizar_db_pagasanalitico` em
+    2026-10-13 pra suportar baixar de 2 acessos Looker diferentes e só então
+    escrever o resultado já empilhado (ver `escrever_pagasanalitico_dia` e a
+    orquestração multi-conta em `baixar_tudo_multi_conta`). `sessao`: se
+    omitida e `evidencias` for pedida, abre uma sessão própria (1ª conta
+    configurada) só pra esse fim — se `evidencias` for `None`, repassa
+    `sessao=None` direto pro `baixar_looker_bruto`, que já sabe abrir/fechar
+    sozinho (ver docstring de lá)."""
+    filtro = (
+        "Tipo+Exibicao=qtde%5E_propostas&Tipo+Veiculo=&Tipo+Pessoa="
+        f"&Dt+Relatorio+Date={dia.isoformat()}"
+        "&Lojista=&Status+Proposta=&Fase=&GP=&SUPERVISOR=&GN=&Tipo+Cupom="
+        "&Tp+Atendimento=CORBAN&Equipe+de+venda=&Grupo=&AUTOSHOPPING=&Shopping="
+        "&Concessionaria=&Rede=&Rede+%2B+Regional=&Plataforma=&Filial="
+        "&Classificacao+Loja=&UF+Loja=&Cidade+Loja=&Bairro+Loja=&A%C3%A7%C3%A3o+Loja="
+        "&Onda+Lib+URL=&Quebra=&ID+Proposta=&CPF=&Idade+Do+Bem=&Rating+Cliente="
+        "&S+Cliente=&Gerente+Coordenador+Meta=&Gerente+Neg%C3%B3cios+Meta="
+        "&Gerente+Coordenador+Corban=&Gerente+Neg%C3%B3cios+Corban=&Cd+Loja="
+    )
+    if evidencias is None:
+        df = baixar_looker_bruto(
+            "acompanhamento_veiculos", "analitico", filter_query_override=filtro, sessao=sessao
+        )
+    elif sessao is not None:
+        df = _baixar_pagasanalitico_com_evidencias(sessao, filtro, evidencias)
+    else:
+        with sessao_looker(contas_looker()[0]) as sessao_local:
+            df = _baixar_pagasanalitico_com_evidencias(sessao_local, filtro, evidencias)
+    df["Dt Relatório"] = pd.to_datetime(df["Dt Relatório"]).dt.date
+    return df[df["Dt Relatório"] == dia].reset_index(drop=True)
+
+
+def escrever_pagasanalitico_dia(wb, dia: date, df: pd.DataFrame) -> dict:
+    """Só a escrita na planilha de 1 dia — `df` já deve vir filtrado (e,
+    desde a divisão em 2 acessos Looker em out/26, já EMPILHADO das 2
+    contas — ver `baixar_tudo_multi_conta`). Extraído de
+    `atualizar_db_pagasanalitico` em 2026-10-13."""
     ws = wb["db_pagasanalitico"]
     header_row = 1
     mapa = _header_map(ws, header_row)
@@ -634,35 +699,6 @@ def atualizar_db_pagasanalitico(
             "linha-modelo pra copiar as fórmulas das colunas derivadas. Preencha ao "
             "menos 1 linha manualmente no Excel antes de rodar a automação."
         )
-
-    # Baixa ANTES de mexer na planilha — se o download falhar, nada foi
-    # alterado no workbook em memória (e o CLI, por sua vez, não salva nada
-    # no disco se uma exceção subir até ele).
-    filtro = (
-        "Tipo+Exibicao=qtde%5E_propostas&Tipo+Veiculo=&Tipo+Pessoa="
-        f"&Dt+Relatorio+Date={dia.isoformat()}"
-        "&Lojista=&Status+Proposta=&Fase=&GP=&SUPERVISOR=&GN=&Tipo+Cupom="
-        "&Tp+Atendimento=CORBAN&Equipe+de+venda=&Grupo=&AUTOSHOPPING=&Shopping="
-        "&Concessionaria=&Rede=&Rede+%2B+Regional=&Plataforma=&Filial="
-        "&Classificacao+Loja=&UF+Loja=&Cidade+Loja=&Bairro+Loja=&A%C3%A7%C3%A3o+Loja="
-        "&Onda+Lib+URL=&Quebra=&ID+Proposta=&CPF=&Idade+Do+Bem=&Rating+Cliente="
-        "&S+Cliente=&Gerente+Coordenador+Meta=&Gerente+Neg%C3%B3cios+Meta="
-        "&Gerente+Coordenador+Corban=&Gerente+Neg%C3%B3cios+Corban=&Cd+Loja="
-    )
-    if evidencias is None:
-        # Sem pedido de evidência, comportamento de sempre: baixar_looker_bruto
-        # decide sozinho se abre sessão nova ou reaproveita `sessao` — não
-        # precisamos tocar na página depois do download.
-        df = baixar_looker_bruto(
-            "acompanhamento_veiculos", "analitico", filter_query_override=filtro, sessao=sessao
-        )
-    elif sessao is not None:
-        df = _baixar_pagasanalitico_com_evidencias(sessao, filtro, evidencias)
-    else:
-        with sessao_looker() as sessao_local:
-            df = _baixar_pagasanalitico_com_evidencias(sessao_local, filtro, evidencias)
-    df["Dt Relatório"] = pd.to_datetime(df["Dt Relatório"]).dt.date
-    df = df[df["Dt Relatório"] == dia].reset_index(drop=True)
 
     if bloco is not None:
         qtd_removida = bloco[1] - bloco[0] + 1
@@ -699,6 +735,21 @@ def atualizar_db_pagasanalitico(
         "linhas_paga": len(pagas),
         "soma_vl_financiamento_paga": round(soma_vl_financiamento_pagas, 2),
     }
+
+
+def atualizar_db_pagasanalitico(
+    wb,
+    dia: date,
+    *,
+    sessao: tuple[PortalRpaConnector, Page] | None = None,
+    evidencias: list[Path] | None = None,
+) -> dict:
+    """Atualiza 1 dia usando 1 conta Looker só — uso isolado (`--aba
+    db_pagasanalitico --dia`) e testes do sandbox. Pro fluxo `--tudo`, que
+    desde 2026-10-13 baixa das 2 contas configuradas e empilha antes de
+    escrever, ver `baixar_tudo_multi_conta`/`escrever_pagasanalitico_dia`."""
+    df = _baixar_pagasanalitico_dia(dia, sessao=sessao, evidencias=evidencias)
+    return escrever_pagasanalitico_dia(wb, dia, df)
 
 
 def atualizar_db_pagasanalitico_ultimos_dias(
@@ -769,6 +820,27 @@ def atualizar_db_pagasanalitico_ultimos_dias(
     return resultados
 
 
+def escrever_pagasanalitico_ultimos_dias(wb, por_dia: dict[date, pd.DataFrame]) -> list[dict]:
+    """Escreve vários dias (cada um já filtrado e — desde a divisão em 2
+    acessos Looker em out/26 — já EMPILHADO das 2 contas, ver
+    `baixar_tudo_multi_conta`) na planilha, do dia mais antigo pro mais novo.
+    Pula (loga, não derruba os outros dias) qualquer dia já "enterrado" no
+    meio da aba — mesma regra seguida por `atualizar_db_pagasanalitico_ultimos_dias`,
+    só que aqui a escrita já recebe o dado pronto em vez de baixar sozinha."""
+    resultados: list[dict] = []
+    for dia in sorted(por_dia):
+        try:
+            resultados.append(escrever_pagasanalitico_dia(wb, dia, por_dia[dia]))
+        except AtualizacaoRecusada as exc:
+            logger.info(
+                "db_pagasanalitico: dia %s não atualizado (provavelmente já coberto antes "
+                "por um bloco mais antigo da aba) — %s",
+                dia.isoformat(),
+                exc,
+            )
+    return resultados
+
+
 def _normalizar_texto_numerico(serie: pd.Series) -> pd.Series:
     """Normaliza uma coluna que deveria ser texto (ex.: "Anomes Apuracao",
     comparada por igualdade exata de string) mas que o pandas pode ter lido
@@ -812,32 +884,50 @@ def _num(v: object) -> float:
 # ---------------------------------------------------------------------------
 
 
-def atualizar_db_apuracaoavista(
-    wb,
+def _baixar_apuracaoavista(
     anomes: str,
     *,
     sessao: tuple[PortalRpaConnector, Page] | None = None,
-    evidencias: list[Path] | None = None,
     filter_value_override: str | None = None,
-) -> dict:
-    """`anomes` no formato 'AAAAMM' (ex.: '202609').
+) -> pd.DataFrame:
+    """Só a parte Looker (download + filtro) do mês pedido, numa sessão já
+    logada — NÃO mexe na planilha, não tira evidência (ver
+    `_capturar_evidencia_apuracao_parceiro`, chamada à parte por quem
+    orquestra as 2 contas). Extraído de `atualizar_db_apuracaoavista` em
+    2026-10-13.
 
-    `evidencias`: se passada, captura (na MESMA sessão logada, navegando pra
-    outro dashboard) o print em tela cheia da tile "Bloco de Metas" —
-    pedido explícito do usuário em 2026-09-29 (ver
-    `_capturar_evidencia_apuracao_parceiro`).
+    NÃO forçamos "Safra Mês" pro mês exato (ex.: "2026-09") — achado real em
+    2026-09-25, comparando ao vivo os dois filtros: "Safra Mês" e "Anomes
+    Apuracao" são dimensões DIFERENTES no Looker. Forçar "Safra Mês=2026-09"
+    excluiu silenciosamente 24 contratos que são de setembro pelo "Anomes
+    Apuracao" mas têm outro valor de "Safra Mês" (429 linhas em vez das 453
+    reais). Usamos o filtro relativo PADRÃO configurado ("2 months" — largo
+    o bastante pra sempre cobrir o mês corrente) e filtramos o mês exato em
+    Python pelo "Anomes Apuracao" mesmo, igual já fazemos com sucesso em
+    atualizar_db_pagasanalitico/atualizar_db_mercado.
 
-    `filter_value_override`: sobrescreve a janela relativa padrão ("2
-    months", larga o bastante pra cobrir o MÊS CORRENTE) do filtro "Safra
-    Mês" do comissao_avista. Achado real em 2026-10-01: ao reprocessar o MÊS
-    ANTERIOR como catch-up (ver `atualizar_excel.py`), a janela de 2 meses —
-    relativa a HOJE, não ao `anomes` pedido — já não cobre mais contratos
-    mais antigos desse mês (Safra Mês mais velha que Anomes Apuracao), e
-    24 linhas de setembro sumiram silenciosamente numa re-sincronização de
+    `filter_value_override`: sobrescreve essa janela relativa padrão ("2
+    months") — achado real em 2026-10-01: ao reprocessar o MÊS ANTERIOR
+    como catch-up (ver `atualizar_excel.py`), a janela de 2 meses — relativa
+    a HOJE, não ao `anomes` pedido — já não cobre mais contratos mais
+    antigos desse mês (Safra Mês mais velha que Anomes Apuracao), e 24
+    linhas de setembro sumiram silenciosamente numa re-sincronização de
     teste (pego pela trava de `arrastar_base_final`, nada chegou a ser
     salvo). Quem chama deve passar uma janela mais larga (ex.: "3 months")
     ao pedir um mês que não é mais o corrente."""
+    df = baixar_looker_bruto(
+        "comissao_avista", "analitico", filter_value_override=filter_value_override, sessao=sessao
+    )
+    df["Anomes Apuracao"] = _normalizar_texto_numerico(df["Anomes Apuracao"])
+    return df[df["Anomes Apuracao"] == anomes].reset_index(drop=True)
 
+
+def escrever_apuracaoavista(wb, anomes: str, df: pd.DataFrame) -> dict:
+    """Só a escrita na planilha do mês pedido — `df` já deve vir filtrado (e,
+    desde a divisão em 2 acessos Looker em out/26, já EMPILHADO das 2
+    contas — ver `baixar_tudo_multi_conta`). Extraído de
+    `atualizar_db_apuracaoavista` em 2026-10-13. `anomes` no formato
+    'AAAAMM' (ex.: '202609')."""
     ws = wb["db_apuracaoavista"]
     header_row = 1
     mapa = _header_map(ws, header_row)
@@ -866,38 +956,6 @@ def atualizar_db_apuracaoavista(
             "db_apuracaoavista está vazia — não há linha-modelo. Preencha ao menos 1 "
             "linha manualmente antes de rodar a automação."
         )
-
-    # Baixa ANTES de mexer na planilha (ver mesma nota em atualizar_db_pagasanalitico).
-    #
-    # NÃO forçamos "Safra Mês" pro mês exato (ex.: "2026-09") — achado real em
-    # 2026-09-25, comparando ao vivo os dois filtros: "Safra Mês" e "Anomes
-    # Apuracao" são dimensões DIFERENTES no Looker. Forçar "Safra Mês=2026-09"
-    # excluiu silenciosamente 24 contratos que são de setembro pelo "Anomes
-    # Apuracao" mas têm outro valor de "Safra Mês" (429 linhas em vez das 453
-    # reais). Usamos o filtro relativo PADRÃO configurado ("2 months" — largo
-    # o bastante pra sempre cobrir o mês corrente) e filtramos o mês exato
-    # em Python pelo "Anomes Apuracao" mesmo, igual já fazemos com sucesso em
-    # atualizar_db_pagasanalitico/atualizar_db_mercado.
-    if evidencias is None:
-        df = baixar_looker_bruto(
-            "comissao_avista", "analitico", filter_value_override=filter_value_override, sessao=sessao
-        )
-    elif sessao is not None:
-        df = baixar_looker_bruto(
-            "comissao_avista", "analitico", filter_value_override=filter_value_override, sessao=sessao
-        )
-        _capturar_evidencia_apuracao_parceiro(sessao, evidencias)
-    else:
-        with sessao_looker() as sessao_local:
-            df = baixar_looker_bruto(
-                "comissao_avista",
-                "analitico",
-                filter_value_override=filter_value_override,
-                sessao=sessao_local,
-            )
-            _capturar_evidencia_apuracao_parceiro(sessao_local, evidencias)
-    df["Anomes Apuracao"] = _normalizar_texto_numerico(df["Anomes Apuracao"])
-    df = df[df["Anomes Apuracao"] == anomes].reset_index(drop=True)
 
     if bloco is not None:
         qtd_removida = bloco[1] - bloco[0] + 1
@@ -929,19 +987,67 @@ def atualizar_db_apuracaoavista(
     }
 
 
+def atualizar_db_apuracaoavista(
+    wb,
+    anomes: str,
+    *,
+    sessao: tuple[PortalRpaConnector, Page] | None = None,
+    evidencias: list[Path] | None = None,
+    filter_value_override: str | None = None,
+) -> dict:
+    """Atualiza 1 mês usando 1 conta Looker só — uso isolado (`--aba
+    db_apuracaoavista --mes`) e testes do sandbox. Pro fluxo `--tudo`, que
+    desde 2026-10-13 baixa das 2 contas configuradas e empilha antes de
+    escrever, ver `baixar_tudo_multi_conta`/`escrever_apuracaoavista`.
+    `anomes` no formato 'AAAAMM' (ex.: '202609')."""
+    if evidencias is None:
+        df = _baixar_apuracaoavista(anomes, sessao=sessao, filter_value_override=filter_value_override)
+    elif sessao is not None:
+        df = _baixar_apuracaoavista(anomes, sessao=sessao, filter_value_override=filter_value_override)
+        _capturar_evidencia_apuracao_parceiro(sessao, evidencias)
+    else:
+        with sessao_looker(contas_looker()[0]) as sessao_local:
+            df = _baixar_apuracaoavista(
+                anomes, sessao=sessao_local, filter_value_override=filter_value_override
+            )
+            _capturar_evidencia_apuracao_parceiro(sessao_local, evidencias)
+    return escrever_apuracaoavista(wb, anomes, df)
+
+
 # ---------------------------------------------------------------------------
 # db_mercado (grão: mês) — painel_visita_mercado / analitico_mercado_por_loja
 # ---------------------------------------------------------------------------
 
 
-def atualizar_db_mercado(
-    wb,
-    anomes: str,
-    *,
-    sessao: tuple[PortalRpaConnector, Page] | None = None,
-) -> dict:
-    """`anomes` no formato 'AAAAMM' (ex.: '202609'). Sem restrição de "só o
-    último bloco" — nenhuma outra aba referencia `db_mercado` por posição."""
+def _baixar_mercado(
+    anomes: str, *, sessao: tuple[PortalRpaConnector, Page] | None = None
+) -> pd.DataFrame:
+    """Só a parte Looker (download + filtro) do mês pedido, numa sessão já
+    logada — NÃO mexe na planilha. Extraído de `atualizar_db_mercado` em
+    2026-10-13."""
+    ano, mes = int(anomes[:4]), int(anomes[4:])
+    filtro_base = (
+        "R%24%2F%23=1&Dt+Refer%C3%AAncia+Month={mes}&Lojista=&Nome+GP=&SUPERVISOR="
+        "&Nome+GN=&Nome+Filial=&Concession%C3%A1ria=&Auto+Shopping=&Plataforma="
+        "&Uf+Loja=&Cidade+Loja=&Bairro+Loja="
+    ).format(mes=f"{ano}-{mes:02d}")
+    df = baixar_looker_bruto(
+        "painel_visita_mercado",
+        "analitico_mercado_por_loja",
+        filter_query_override=filtro_base,
+        sessao=sessao,
+    )
+    df["Mês"] = pd.to_datetime(df["Mês"]).dt.date
+    return df[df["Mês"].apply(lambda d: d.year == ano and d.month == mes)].reset_index(drop=True)
+
+
+def escrever_mercado(wb, anomes: str, df: pd.DataFrame) -> dict:
+    """Só a escrita na planilha do mês pedido — `df` já deve vir filtrado (e,
+    desde a divisão em 2 acessos Looker em out/26, já EMPILHADO das 2
+    contas — ver `baixar_tudo_multi_conta`). Extraído de
+    `atualizar_db_mercado` em 2026-10-13. `anomes` no formato 'AAAAMM' (ex.:
+    '202609'). Sem restrição de "só o último bloco" — nenhuma outra aba
+    referencia `db_mercado` por posição."""
     ws = wb["db_mercado"]
     header_row = 1
     mapa = _header_map(ws, header_row)
@@ -974,21 +1080,6 @@ def atualizar_db_mercado(
             "manualmente antes de rodar a automação."
         )
 
-    # Baixa ANTES de mexer na planilha (ver mesma nota em atualizar_db_pagasanalitico).
-    filtro_base = (
-        "R%24%2F%23=1&Dt+Refer%C3%AAncia+Month={mes}&Lojista=&Nome+GP=&SUPERVISOR="
-        "&Nome+GN=&Nome+Filial=&Concession%C3%A1ria=&Auto+Shopping=&Plataforma="
-        "&Uf+Loja=&Cidade+Loja=&Bairro+Loja="
-    ).format(mes=f"{ano}-{mes:02d}")
-    df = baixar_looker_bruto(
-        "painel_visita_mercado",
-        "analitico_mercado_por_loja",
-        filter_query_override=filtro_base,
-        sessao=sessao,
-    )
-    df["Mês"] = pd.to_datetime(df["Mês"]).dt.date
-    df = df[df["Mês"].apply(lambda d: d.year == ano and d.month == mes)].reset_index(drop=True)
-
     if bloco is not None:
         qtd_removida = bloco[1] - bloco[0] + 1
         ws.delete_rows(bloco[0], qtd_removida)
@@ -1020,6 +1111,21 @@ def atualizar_db_mercado(
     }
 
 
+def atualizar_db_mercado(
+    wb,
+    anomes: str,
+    *,
+    sessao: tuple[PortalRpaConnector, Page] | None = None,
+) -> dict:
+    """Atualiza 1 mês usando 1 conta Looker só — uso isolado (`--aba
+    db_mercado --mes`) e testes do sandbox. Pro fluxo `--tudo`, que desde
+    2026-10-13 baixa das 2 contas configuradas e empilha antes de escrever,
+    ver `baixar_tudo_multi_conta`/`escrever_mercado`. `anomes` no formato
+    'AAAAMM' (ex.: '202609')."""
+    df = _baixar_mercado(anomes, sessao=sessao)
+    return escrever_mercado(wb, anomes, df)
+
+
 def _contar_pagas_pagasanalitico(wb, ano: int, mes: int) -> int:
     """Conta linhas de `db_pagasanalitico` com Status Proposta == 'PROPOSTA
     PAGA' no mês/ano dados — lê o que já está na aba (não baixa de novo)."""
@@ -1035,6 +1141,118 @@ def _contar_pagas_pagasanalitico(wb, ano: int, mes: int) -> int:
         if d.year == ano and d.month == mes and ws.cell(row=r, column=col_status).value == "PROPOSTA PAGA":
             total += 1
     return total
+
+
+# ---------------------------------------------------------------------------
+# Orquestração multi-conta (--tudo) — pedido do usuário em 2026-10-13: a
+# partir de out/26 a informação do negócio foi dividida em 2 acessos Looker
+# diferentes (ver `ContaLooker`/`contas_looker()` em `portal_rpa.py`), cada
+# um só enxergando a fatia dele — pra ter o dado completo é preciso logar
+# nos dois, baixar tudo de CADA UM (evidência incluída), e só DEPOIS
+# empilhar (concat) e escrever na planilha (os checks/travas de segurança
+# existentes continuam rodando 1x só, sobre o dado já empilhado).
+# ---------------------------------------------------------------------------
+
+
+def baixar_tudo_multi_conta(
+    hoje: date,
+    *,
+    anomes_atual: str,
+    anomes_anterior: str | None,
+    quantidade_dias_pagasanalitico: int = 3,
+) -> dict:
+    """Pra CADA conta configurada (`contas_looker()`): abre 1 sessão só,
+    baixa TUDO que `--tudo` precisa (pagasanalitico dos últimos
+    `quantidade_dias_pagasanalitico` dias, apuracaoavista/mercado do mês
+    atual, e do mês anterior se `anomes_anterior` for passado — ver
+    `fechar_mes_anterior` em `atualizar_excel.py`), tira as evidências dessa
+    conta (print de 'Produção' + 'Bloco de Metas'), e fecha a sessão. Só
+    DEPOIS de passar pelas 2 contas, empilha (concat) cada relatório/período
+    numa estrutura única, pronta pra escrever na planilha (ver
+    `escrever_pagasanalitico_ultimos_dias`/`escrever_apuracaoavista`/
+    `escrever_mercado` em `atualizar_excel.py`) — NÃO toca na planilha.
+
+    `anomes_anterior=None` pula o catch-up do mês anterior (fora da janela
+    "até dia 05", ver `atualizar_excel.py`) — nesse caso as chaves
+    `*_anterior` do retorno vêm `None`."""
+    dias = [hoje - timedelta(days=i) for i in range(quantidade_dias_pagasanalitico - 1, -1, -1)]
+    por_dia: dict[date, list[pd.DataFrame]] = {dia: [] for dia in dias}
+    av_atual: list[pd.DataFrame] = []
+    av_anterior: list[pd.DataFrame] = []
+    mercado_atual: list[pd.DataFrame] = []
+    mercado_anterior: list[pd.DataFrame] = []
+    evidencias: list[Path] = []
+
+    for conta in contas_looker():
+        with sessao_looker(conta) as sessao:
+            dfs_desta_conta: dict[date, pd.DataFrame] = {}
+            for dia in dias:
+                df = _baixar_pagasanalitico_dia(dia, sessao=sessao)
+                dfs_desta_conta[dia] = df
+                por_dia[dia].append(df)
+
+            dia_com_dado = next(
+                (dia for dia in reversed(dias) if len(dfs_desta_conta[dia]) > 0), None
+            )
+            if dia_com_dado is None:
+                logger.info(
+                    "Conta %s: nenhum dos últimos %d dias tem dado ainda — pulando print "
+                    "de evidência dessa conta (não afeta a atualização).",
+                    conta.rotulo,
+                    quantidade_dias_pagasanalitico,
+                )
+            else:
+                try:
+                    # Re-baixa (idempotente) só pra deixar a página navegada
+                    # no estado do dia certo antes do print — mesmo motivo
+                    # de sempre (ver docstring antiga de
+                    # atualizar_db_pagasanalitico_ultimos_dias): o último dia
+                    # do laço acima pode ter ficado numa data SEM dado (ex.:
+                    # hoje de manhã cedo), que renderiza o dashboard sem a
+                    # barra de abas.
+                    _baixar_pagasanalitico_dia(dia_com_dado, sessao=sessao)
+                    _capturar_evidencias_producao(sessao, evidencias)
+                except Exception as exc:
+                    logger.warning(
+                        "Conta %s: falha ao capturar evidência de 'Produção' (não afeta a "
+                        "atualização — os dados já foram baixados normalmente): %s",
+                        conta.rotulo,
+                        exc,
+                    )
+
+            if anomes_anterior is not None:
+                av_anterior.append(
+                    _baixar_apuracaoavista(
+                        anomes_anterior, sessao=sessao, filter_value_override="3 months"
+                    )
+                )
+                mercado_anterior.append(_baixar_mercado(anomes_anterior, sessao=sessao))
+
+            av_atual.append(_baixar_apuracaoavista(anomes_atual, sessao=sessao))
+            try:
+                _capturar_evidencia_apuracao_parceiro(sessao, evidencias)
+            except Exception as exc:
+                logger.warning(
+                    "Conta %s: falha ao capturar evidência do 'Bloco de Metas' (não afeta "
+                    "a atualização — os dados já foram baixados normalmente): %s",
+                    conta.rotulo,
+                    exc,
+                )
+
+            mercado_atual.append(_baixar_mercado(anomes_atual, sessao=sessao))
+
+    return {
+        "pagasanalitico": {dia: pd.concat(dfs, ignore_index=True) for dia, dfs in por_dia.items()},
+        "apuracaoavista_atual": pd.concat(av_atual, ignore_index=True),
+        "apuracaoavista_anterior": (
+            pd.concat(av_anterior, ignore_index=True) if anomes_anterior is not None else None
+        ),
+        "mercado_atual": pd.concat(mercado_atual, ignore_index=True),
+        "mercado_anterior": (
+            pd.concat(mercado_anterior, ignore_index=True) if anomes_anterior is not None else None
+        ),
+        "evidencias": evidencias,
+    }
 
 
 # ---------------------------------------------------------------------------

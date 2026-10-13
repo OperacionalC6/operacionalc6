@@ -645,6 +645,21 @@ atualizar manualmente copiando/colando do Looker.
   quiser automatizar isso também depois); (c) `db_mercado` — quantidade registrada bate com
   quantidade baixada — **totalmente automatizado** (recontagem real pós-escrita, não uma tautologia).
 
+**DOIS ACESSOS LOOKER (2026-10-13)**: a partir de out/26 a informação do negócio foi dividida em 2
+logins Looker diferentes (parceiros "002921" e "003881" — usuário confirmou que os dados são
+disjuntos a partir dessa data), cada um só enxergando a fatia dele. Toda a automação (`--tudo` e
+`--aba` isolada) agora loga nas 2 contas e EMPILHA (concat) o resultado antes de escrever na
+planilha — ver `ContaLooker`/`contas_looker()` em `portal_rpa.py`, `baixar_tudo_multi_conta`/
+`baixar_de_todas_contas` em `excel_sync.py`. Cada `atualizar_db_*` foi dividida em um par
+`_baixar_*`/`escrever_*` (download puro / escrita pura) pra permitir baixar das 2 contas antes de
+escrever 1x só — os `atualizar_db_*` originais continuam existindo como wrappers de 1 conta só
+(usados nos testes do sandbox). Cada conta tem seu próprio perfil de navegador salvo (variáveis
+`.env`: `C6_PORTAL_USERNAME_002921`/`_PASSWORD_002921` e `_003881`/`_003881` — a aprovação de
+dispositivo na 1ª vez é por conta, 2x no total). Prints de evidência saem 1x por conta (nome do
+arquivo identifica qual é qual). Testado no sandbox com 2 contas fake; **ainda não rodado contra o
+portal real** — primeira execução real precisa confirmar que os dados das 2 contas não se sobrepõem
+(a premissa assumida) e que a aprovação de dispositivo da 2ª conta funciona normalmente.
+
 ## Como uma sessão nova deve retomar
 
 1. Ler esta skill primeiro.

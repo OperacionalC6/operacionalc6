@@ -47,8 +47,16 @@ class Settings(BaseSettings):
     c6_portal_base_url: str = (
         "https://c6.c6consig.com.br/WebAutorizador/Login/AC.UI.LOGIN.aspx"
     )
-    c6_portal_username: str | None = None
-    c6_portal_password: str | None = None
+    # A partir de out/26 a informação do negócio foi dividida em 2 acessos
+    # Looker diferentes (parceiros "002921" e "003881") — cada login só
+    # enxerga a fatia dele, e as duas precisam ser baixadas e empilhadas pra
+    # ter o dado completo (ver `ContaLooker`/`_contas_looker()` em
+    # `portal_rpa.py` e a orquestração em `atualizar_excel.py`). Pedido do
+    # usuário em 2026-10-13.
+    c6_portal_username_002921: str | None = None
+    c6_portal_password_002921: str | None = None
+    c6_portal_username_003881: str | None = None
+    c6_portal_password_003881: str | None = None
     c6_portal_totp_secret: str | None = None
 
     pipeline_cron_schedules: str = "08:00,13:00,18:00"

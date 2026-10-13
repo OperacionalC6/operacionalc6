@@ -11,11 +11,9 @@ Uso:
 
 `--tudo` roda as 3 abas no período mais recente de cada uma — db_pagasanalitico
 processa hoje + os 2 dias anteriores (não só hoje: se algum dia ficou sem
-rodar, o buraco é preenchido sozinho, sem duplicar o que já existe — ver
-`atualizar_db_pagasanalitico_ultimos_dias` em `excel_sync.py`), mês corrente
-pra db_apuracaoavista/db_mercado —, nessa ordem, e arrasta o base_final no
-final — faz 1 login só no portal, reaproveitado por todos os downloads (ver
-`sessao_looker` em `excel_sync.py`), em vez de logar de novo a cada aba.
+rodar, o buraco é preenchido sozinho, sem duplicar o que já existe), mês
+corrente pra db_apuracaoavista/db_mercado —, nessa ordem, e arrasta o
+base_final no final.
 
 Até o dia 05 de cada mês, `--tudo` TAMBÉM reprocessa o MÊS ANTERIOR em
 db_apuracaoavista/db_mercado (antes do mês corrente) — achado real em
@@ -26,6 +24,22 @@ pular direto pro mês corrente no dia 1º travaria o mês anterior pra sempre
 primeiros dias também serve como "check" de fechamento: o relatório final
 mostra a contagem de db_apuracaoavista x PROPOSTA PAGA de db_pagasanalitico
 pro mês anterior de novo, não só pro mês corrente.
+
+DOIS ACESSOS LOOKER (desde 2026-10-13): a partir de out/26 a informação do
+negócio foi dividida em 2 logins diferentes no Looker (parceiros "002921" e
+"003881" — ver `ContaLooker`/`contas_looker()` em
+`app/services/connectors/portal_rpa.py`), cada um só enxergando a fatia
+dele. TODA atualização (inclusive `--aba` isolada) agora loga nas 2 contas e
+EMPILHA (concat) o resultado antes de escrever na planilha — `--tudo` faz
+isso de forma eficiente (`baixar_tudo_multi_conta` em `excel_sync.py`: 1
+sessão por conta cobre TODOS os downloads daquela execução); `--aba` usa
+`baixar_de_todas_contas`, mais simples (1 sessão por conta só pra aquele
+download). Os prints de evidência saem 1x PRA CADA conta (nome do arquivo
+identifica qual é qual). Credenciais de cada conta vêm do .env
+(C6_PORTAL_USERNAME_002921/_PASSWORD_002921 e
+C6_PORTAL_USERNAME_003881/_PASSWORD_003881) — cada uma com seu próprio
+perfil de navegador salvo (aprovação de dispositivo na 1ª vez é por conta,
+não só 1x no total).
 
 Sempre que `db_apuracaoavista` for atualizada (isoladamente ou via `--tudo`),
 o script arrasta o `base_final` automaticamente em seguida — é a única aba
@@ -54,12 +68,16 @@ from app.services.acomp_diario_evidencia import capturar_prints_acomp_diario
 from app.services.excel_sync import (
     _EVIDENCIAS_DIR,
     AtualizacaoRecusada,
+    _baixar_apuracaoavista,
+    _baixar_mercado,
+    _baixar_pagasanalitico_dia,
     arrastar_base_final,
-    atualizar_db_apuracaoavista,
-    atualizar_db_mercado,
-    atualizar_db_pagasanalitico,
-    atualizar_db_pagasanalitico_ultimos_dias,
-    sessao_looker,
+    baixar_de_todas_contas,
+    baixar_tudo_multi_conta,
+    escrever_apuracaoavista,
+    escrever_mercado,
+    escrever_pagasanalitico_dia,
+    escrever_pagasanalitico_ultimos_dias,
 )
 from app.services.relatorio_checks import gerar_relatorio
 
@@ -129,65 +147,62 @@ def main() -> None:
             # Looker — ver docstring do módulo (achado real em 2026-10-01).
             fechar_mes_anterior = hoje.day <= 5
 
-            # 1 login só, reaproveitado pros 3 downloads (ver sessao_looker em
-            # excel_sync.py) — antes disso, --tudo fazia 3 logins inteiros.
-            with sessao_looker() as sessao:
-                # Hoje + os 2 dias anteriores (não só hoje) — se algum dia
-                # ficou sem rodar, esse buraco é preenchido sozinho aqui,
-                # sem duplicar o que já existe (ver docstring da função).
-                resultados.extend(
-                    atualizar_db_pagasanalitico_ultimos_dias(wb, hoje, sessao=sessao, evidencias=evidencias)
-                )
+            # Baixa TUDO das 2 contas Looker configuradas (1 sessão por
+            # conta, cobrindo todos os downloads desta execução) e empilha
+            # (concat) cada relatório/período — ver docstring do módulo e de
+            # `baixar_tudo_multi_conta` em excel_sync.py. NÃO mexe na
+            # planilha ainda.
+            dado = baixar_tudo_multi_conta(
+                hoje,
+                anomes_atual=anomes_atual,
+                anomes_anterior=anomes_anterior if fechar_mes_anterior else None,
+            )
+            evidencias.extend(dado["evidencias"])
 
-                if fechar_mes_anterior:
-                    # SEMPRE antes do mês corrente — as duas abas só aceitam
-                    # mexer no ÚLTIMO bloco, então processar o corrente
-                    # primeiro travaria o anterior. Sem evidência aqui: o
-                    # print do 'Bloco de Metas' já sai 1x mais abaixo, não
-                    # precisa duplicar.
-                    try:
-                        # filter_value_override="3 months": a janela padrão
-                        # ("2 months") é relativa a HOJE, não ao mês pedido —
-                        # cobre bem o mês CORRENTE, mas aqui pedimos o mês
-                        # anterior, que já consumiu 1 mês dessa folga (achado
-                        # real em 2026-10-01: sem isso, contratos de Safra
-                        # Mês mais antiga somem silenciosamente — ver
-                        # docstring de atualizar_db_apuracaoavista).
-                        resultados.append(
-                            atualizar_db_apuracaoavista(
-                                wb, anomes_anterior, sessao=sessao, filter_value_override="3 months"
-                            )
-                        )
-                        precisa_arrastar_base_final = True
-                    except AtualizacaoRecusada as exc:
-                        logger.info(
-                            "db_apuracaoavista: mês anterior (%s) não reprocessado — %s",
-                            anomes_anterior,
-                            exc,
-                        )
-                    try:
-                        resultados.append(atualizar_db_mercado(wb, anomes_anterior, sessao=sessao))
-                    except AtualizacaoRecusada as exc:
-                        logger.info(
-                            "db_mercado: mês anterior (%s) não reprocessado — %s",
-                            anomes_anterior,
-                            exc,
-                        )
+            # Escrita: só agora, com o dado já empilhado das 2 contas — mesma
+            # ordem/regras de segurança de sempre (mês anterior SEMPRE antes
+            # do corrente, porque as duas abas só aceitam mexer no ÚLTIMO
+            # bloco; processar o corrente primeiro travaria o anterior).
+            resultados.extend(escrever_pagasanalitico_ultimos_dias(wb, dado["pagasanalitico"]))
 
-                resultados.append(
-                    atualizar_db_apuracaoavista(wb, anomes_atual, sessao=sessao, evidencias=evidencias)
-                )
-                precisa_arrastar_base_final = True
-                resultados.append(atualizar_db_mercado(wb, anomes_atual, sessao=sessao))
+            if fechar_mes_anterior:
+                try:
+                    resultados.append(
+                        escrever_apuracaoavista(wb, anomes_anterior, dado["apuracaoavista_anterior"])
+                    )
+                    precisa_arrastar_base_final = True
+                except AtualizacaoRecusada as exc:
+                    logger.info(
+                        "db_apuracaoavista: mês anterior (%s) não reprocessado — %s",
+                        anomes_anterior,
+                        exc,
+                    )
+                try:
+                    resultados.append(escrever_mercado(wb, anomes_anterior, dado["mercado_anterior"]))
+                except AtualizacaoRecusada as exc:
+                    logger.info(
+                        "db_mercado: mês anterior (%s) não reprocessado — %s",
+                        anomes_anterior,
+                        exc,
+                    )
+
+            resultados.append(escrever_apuracaoavista(wb, anomes_atual, dado["apuracaoavista_atual"]))
+            precisa_arrastar_base_final = True
+            resultados.append(escrever_mercado(wb, anomes_atual, dado["mercado_atual"]))
         elif args.aba == "db_pagasanalitico":
-            resultados.append(atualizar_db_pagasanalitico(wb, args.dia, evidencias=evidencias))
+            df = baixar_de_todas_contas(
+                lambda sessao: _baixar_pagasanalitico_dia(args.dia, sessao=sessao, evidencias=evidencias)
+            )
+            resultados.append(escrever_pagasanalitico_dia(wb, args.dia, df))
         elif args.aba == "db_apuracaoavista":
             anomes = args.mes.replace("-", "")
-            resultados.append(atualizar_db_apuracaoavista(wb, anomes))
+            df = baixar_de_todas_contas(lambda sessao: _baixar_apuracaoavista(anomes, sessao=sessao))
+            resultados.append(escrever_apuracaoavista(wb, anomes, df))
             precisa_arrastar_base_final = True
         elif args.aba == "db_mercado":
             anomes = args.mes.replace("-", "")
-            resultados.append(atualizar_db_mercado(wb, anomes))
+            df = baixar_de_todas_contas(lambda sessao: _baixar_mercado(anomes, sessao=sessao))
+            resultados.append(escrever_mercado(wb, anomes, df))
 
         if precisa_arrastar_base_final:
             resultados.append(arrastar_base_final(wb))
