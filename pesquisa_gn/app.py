@@ -101,8 +101,18 @@ def segredo(chave: str, padrao=None):
         return os.environ.get(chave, padrao)
 
 
+def credenciais_google() -> dict | None:
+    """Aceita o .json inteiro colado em GOOGLE_JSON ou o bloco [gcp_service_account]."""
+    bruto = segredo("GOOGLE_JSON")
+    if bruto:
+        import json
+        return json.loads(bruto)
+    bloco = segredo("gcp_service_account")
+    return dict(bloco) if bloco else None
+
+
 def usa_google_sheets() -> bool:
-    return segredo("gsheets") is not None and segredo("gcp_service_account") is not None
+    return segredo("gsheets") is not None and credenciais_google() is not None
 
 
 @st.cache_resource
@@ -111,7 +121,7 @@ def _worksheet():
     from google.oauth2.service_account import Credentials
 
     creds = Credentials.from_service_account_info(
-        dict(st.secrets["gcp_service_account"]),
+        credenciais_google(),
         scopes=["https://www.googleapis.com/auth/spreadsheets"],
     )
     sh = gspread.authorize(creds).open_by_url(st.secrets["gsheets"]["spreadsheet_url"])

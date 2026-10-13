@@ -64,8 +64,20 @@ As respostas ficam em `data/respostas.csv` (separador `;`, abre direto no Excel)
    aba **Keys → Add key → JSON**. Um arquivo `.json` será baixado.
 3. Crie uma planilha no Google Sheets e **compartilhe** com o e-mail da conta de
    serviço (`...@...iam.gserviceaccount.com`) como **Editor**.
-4. Nos Secrets, descomente o bloco `[gsheets]` (URL da planilha) e
-   `[gcp_service_account]`, copiando cada campo do `.json`.
+4. Nos Secrets, cole (trocando os valores):
+   ```toml
+   ADMIN_PASSWORD = "sua-senha"
+
+   GOOGLE_JSON = '''
+   { ...conteúdo inteiro do arquivo .json, de { até } ... }
+   '''
+
+   [gsheets]
+   spreadsheet_url = "https://docs.google.com/spreadsheets/d/SEU_ID/edit"
+   worksheet = "Respostas"
+   ```
+   `GOOGLE_JSON` precisa vir **antes** de `[gsheets]`. (O formato antigo,
+   com o bloco `[gcp_service_account]` campo a campo, também funciona.)
 
 Com isso configurado, o app grava automaticamente na planilha (aba
 `Respostas`, criada com cabeçalho se não existir) e o painel do gestor lê de lá.
