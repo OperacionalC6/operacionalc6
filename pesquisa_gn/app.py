@@ -59,25 +59,77 @@ COLUNAS = [
 # PÁGINA / ESTILO (mobile-first)
 # =============================================================================
 
-st.set_page_config(page_title="Pesquisa GN", page_icon="🚗", layout="centered",
+st.set_page_config(page_title="C6 Auto · Pesquisa GN", page_icon="🚗", layout="centered",
                    initial_sidebar_state="collapsed")
+
+LOGO = BASE_DIR / "logo.png"  # opcional: coloque o logo oficial com este nome
 
 st.markdown(
     """
     <style>
-      .block-container {max-width: 760px; padding-top: 1.5rem; padding-bottom: 4rem;}
-      h1 {font-size: 1.6rem !important;}
-      h3 {font-size: 1.1rem !important; margin-top: .6rem;}
-      /* Botões e campos maiores para toque no celular */
-      .stButton > button, .stDownloadButton > button {min-height: 3rem; font-weight: 600;}
-      div[data-baseweb="select"] > div, .stNumberInput input, .stTextInput input {min-height: 2.75rem;}
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+      html, body, [class*="css"], .stMarkdown, .stTextInput, .stSelectbox, button {
+        font-family: 'Inter', sans-serif !important;
+      }
+      .block-container {max-width: 720px; padding-top: 1.2rem; padding-bottom: 4rem;}
+      header[data-testid="stHeader"] {background: transparent;}
+
+      /* Cabeçalho da marca */
+      .c6-header {padding: 1.4rem 0 1.2rem; border-bottom: 1px solid #2A2A2A; margin-bottom: 1.2rem;}
+      .c6-logo {font-size: 2.1rem; font-weight: 800; letter-spacing: -0.04em; line-height: 1; color: #FFF;}
+      .c6-logo span {font-weight: 400; color: #A3A3A3;}
+      .c6-sub {color: #A3A3A3; font-size: .95rem; margin-top: .45rem;}
+
+      /* Títulos de seção */
+      h3 {font-size: .8rem !important; font-weight: 600 !important; text-transform: uppercase;
+          letter-spacing: .12em; color: #A3A3A3 !important; margin-top: 1.6rem !important;}
+
+      /* Campos */
+      div[data-baseweb="select"] > div, .stNumberInput input, .stTextInput input, .stTextArea textarea {
+        min-height: 2.9rem; border-radius: 12px !important; background: #141414 !important;
+        border-color: #2A2A2A !important;
+      }
+      div[data-testid="stExpander"] {border: 1px solid #2A2A2A; border-radius: 16px; background: #0B0B0B;}
+
+      /* Botões: brancos com texto preto, cantos arredondados */
+      .stButton > button, .stDownloadButton > button, .stFormSubmitButton > button {
+        min-height: 3.2rem; border-radius: 999px; font-weight: 700; letter-spacing: .01em;
+      }
+      .stButton > button[kind="primary"], .stFormSubmitButton > button,
+      .stDownloadButton > button {
+        background: #FFFFFF !important; color: #000000 !important; border: none !important;
+      }
+      .stButton > button[kind="primary"]:hover, .stFormSubmitButton > button:hover,
+      .stDownloadButton > button:hover {background: #D9D9D9 !important;}
+      .stButton > button[kind="primary"] p, .stFormSubmitButton > button p,
+      .stDownloadButton > button p {color: #000000 !important;}
+
+      /* Indicadores do painel */
+      div[data-testid="stMetric"] {background: #141414; border: 1px solid #2A2A2A;
+        border-radius: 16px; padding: .9rem 1rem;}
+
       @media (max-width: 640px) {
         .block-container {padding-left: 1rem; padding-right: 1rem;}
+        .c6-logo {font-size: 1.8rem;}
       }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+
+def cabecalho(subtitulo: str):
+    if LOGO.exists():
+        st.image(str(LOGO), width=140)
+        st.markdown(f'<div class="c6-sub">{subtitulo}</div>', unsafe_allow_html=True)
+        st.markdown('<div class="c6-header" style="padding:0"></div>', unsafe_allow_html=True)
+    else:
+        st.markdown(
+            f'''<div class="c6-header"><div class="c6-logo">C6 <span>Auto</span></div>
+            <div class="c6-sub">{subtitulo}</div></div>''',
+            unsafe_allow_html=True,
+        )
+
 
 # =============================================================================
 # DADOS: lojistas e armazenamento de respostas
@@ -192,7 +244,7 @@ def seletor_banco(pos: int, opcoes: list[str]):
 
 
 def pagina_formulario():
-    st.title("🚗 Pesquisa de Mercado – GN")
+    cabecalho("Pesquisa de Mercado · Gerentes de Negócio")
     st.caption("Campos com * são obrigatórios.")
 
     if st.session_state.pop("enviado_ok", False):
@@ -201,7 +253,7 @@ def pagina_formulario():
     lojistas = carregar_lojistas()
 
     # 1-2. Área e Lojista ----------------------------------------------------
-    st.subheader("📍 Identificação")
+    st.subheader("Identificação")
     areas = sorted(lojistas["area"].unique())
     area = st.selectbox("Área do GN *", areas, index=None,
                         placeholder="Selecione sua área", key="area",
@@ -213,7 +265,7 @@ def pagina_formulario():
                  disabled=not area, key="lojista")
 
     # 3-5. Bancos, acordos e recompensas -------------------------------------
-    st.subheader("🏦 Bancos")
+    st.subheader("Bancos")
     for pos, opcoes in [(1, BANCOS_POS1), (2, BANCOS_POS2), (3, BANCOS_POS3)]:
         with st.expander(f"Banco Posição {pos}", expanded=True):
             seletor_banco(pos, opcoes)
@@ -231,14 +283,14 @@ def pagina_formulario():
               help="1 = principal banco da loja; 10 = menos utilizado.")
 
     # 8. Volumetria ----------------------------------------------------------
-    st.subheader("📊 Volumetria mensal (média)")
+    st.subheader("Volumetria mensal (média)")
     c1, c2, c3 = st.columns(3)
     c1.number_input("Carros vendidos", 0, VOLUME_MAX, 0, step=1, key="carros")
     c2.number_input("Motos vendidas", 0, VOLUME_MAX, 0, step=1, key="motos")
     c3.number_input("Financiamentos", 0, VOLUME_MAX, 0, step=1, key="fin")
 
     # 9. Estrutura de vendas -------------------------------------------------
-    st.subheader("👥 Estrutura de vendas")
+    st.subheader("Estrutura de vendas")
     possui_fi = st.radio("Possui F&I? *", ["Sim", "Não"], index=None, horizontal=True,
                          key="possui_fi")
     if possui_fi == "Sim":
@@ -251,11 +303,11 @@ def pagina_formulario():
                  placeholder="Selecione", key="qtd_lojas")
 
     # 10. Proposta -----------------------------------------------------------
-    st.subheader("💡 Proposta de ação")
+    st.subheader("Proposta de ação")
     st.text_area("Proposta de Ação (opcional)", key="proposta", height=120)
 
     st.divider()
-    if st.button("📨 Enviar Resposta", type="primary", width="stretch"):
+    if st.button("Enviar resposta", type="primary", width="stretch"):
         enviar()
 
 
@@ -347,7 +399,7 @@ def gerar_excel(df: pd.DataFrame) -> bytes:
 
 
 def pagina_gestor():
-    st.title("🔒 Painel do Gestor")
+    cabecalho("Painel do Gestor")
 
     senha_correta = segredo("ADMIN_PASSWORD", "gestor123")
     if not st.session_state.get("gestor_ok"):
@@ -426,9 +478,9 @@ def pagina_gestor():
 # NAVEGAÇÃO
 # =============================================================================
 
-modo = st.segmented_control("Navegação", ["📝 Formulário", "🔒 Gestor"],
-                            default="📝 Formulário", label_visibility="collapsed")
-if modo == "🔒 Gestor":
+modo = st.segmented_control("Navegação", ["Formulário", "Gestor"],
+                            default="Formulário", label_visibility="collapsed")
+if modo == "Gestor":
     pagina_gestor()
 else:
     pagina_formulario()
