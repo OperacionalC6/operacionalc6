@@ -290,6 +290,23 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     necessariamente um problema técnico — sempre olhar o log de dialogs (item 27) antes de suspeitar
     de seletor/senha/código.
 
+29. **`playwright._impl._errors.Error: Locator.count: Execution context was destroyed, most likely
+    because of a navigation` no meio do polling de login, derrubando as 2 tentativas do `@retry`.**
+    Confirmado em produção (2026-10-13, 2º acesso Looker "003881" — ver skill `project-context`, "2
+    acessos Looker"): o `confirm()` de "já autenticado em outra estação" (item 4) dispara uma
+    navegação da página assim que é aceito — se o polling de `_login` (`page.locator(...).count()`,
+    checagem da URL, etc.) roda EXATAMENTE nesse instante, o Playwright derruba a avaliação porque o
+    documento que estava sendo consultado deixou de existir no meio do caminho. Como o `@retry`
+    reexecuta `_login` inteiro do zero (reabrindo a mesma corrida — dialog aceito, navegação,
+    polling), as 2 tentativas podem falhar pelo mesmo motivo seguidas. Corrigido: o corpo do loop de
+    polling em `_login` agora fica num `try/except PlaywrightError`, e se a mensagem contiver
+    "Execution context was destroyed", trata como "ainda não sei, tenta de novo no próximo ciclo" em
+    vez de propagar — qualquer outro `PlaywrightError` continua subindo normalmente (não vira um
+    catch-all silencioso). Lição geral: um `confirm()`/`alert()` que dispara navegação pode destruir o
+    contexto de execução de uma checagem concorrente — qualquer polling de página feito logo depois de
+    aceitar um dialog nativo está sujeito a essa corrida, vale o mesmo padrão de try/except seletivo
+    se aparecer em outro lugar.
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por

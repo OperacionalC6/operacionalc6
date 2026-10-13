@@ -41,6 +41,7 @@ from urllib.parse import quote
 
 import pandas as pd
 import pyotp
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, sync_playwright
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -294,23 +295,45 @@ class PortalRpaConnector(DataConnector):
 
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
-            if success_selector and page.locator(success_selector).first.count() > 0:
-                logger.info("Login RPA no portal C6 concluído com sucesso (menu detectado).")
-                return
+            try:
+                if success_selector and page.locator(success_selector).first.count() > 0:
+                    logger.info("Login RPA no portal C6 concluído com sucesso (menu detectado).")
+                    return
 
-            if login_url_marker not in page.url:
-                logger.info("Login RPA no portal C6 concluído com sucesso (URL mudou).")
-                return
+                if login_url_marker not in page.url:
+                    logger.info("Login RPA no portal C6 concluído com sucesso (URL mudou).")
+                    return
 
-            if error_selector:
-                error_locator = page.locator(error_selector).first
-                if error_locator.count() > 0:
-                    error_text = error_locator.inner_text().strip()
-                    if error_text:
-                        raise PortalLoginError(
-                            f"Falha ao autenticar no portal C6 (usuário de automação). "
-                            f"Mensagem do portal: {error_text}."
-                        )
+                if error_selector:
+                    error_locator = page.locator(error_selector).first
+                    if error_locator.count() > 0:
+                        error_text = error_locator.inner_text().strip()
+                        if error_text:
+                            raise PortalLoginError(
+                                f"Falha ao autenticar no portal C6 (usuário de automação). "
+                                f"Mensagem do portal: {error_text}."
+                            )
+            except PlaywrightError as exc:
+                # Achado real em 2026-10-13: o confirm() de "já autenticado em
+                # outra estação" (item 4 da skill rpa-conventions) dispara uma
+                # navegação da página — se uma das checagens acima rodar
+                # exatamente nesse instante, o Playwright derruba a avaliação
+                # com "Execution context was destroyed, most likely because
+                # of a navigation" (a página que estava sendo consultada
+                # deixou de existir no meio do caminho). Não é falha de login
+                # nem do portal, só uma corrida entre o polling e a troca de
+                # página — trata como "ainda não sei, tenta de novo no
+                # próximo ciclo" em vez de derrubar o login inteiro (o
+                # @retry em cima reexecuta _login do zero, reabrindo a mesma
+                # corrida, então sem esse tratamento 2 tentativas inteiras
+                # podiam falhar pelo mesmo motivo).
+                if "Execution context was destroyed" not in str(exc):
+                    raise
+                logger.info(
+                    "Contexto de execução destruído por navegação durante o polling de login "
+                    "(esperado logo após aceitar o diálogo de 'já autenticado em outra "
+                    "estação') — tentando de novo."
+                )
 
             page.wait_for_timeout(500)
 
