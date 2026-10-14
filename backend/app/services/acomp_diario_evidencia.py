@@ -17,6 +17,8 @@ import logging
 import time
 from pathlib import Path
 
+from tenacity import retry, stop_after_attempt, wait_fixed
+
 logger = logging.getLogger(__name__)
 
 _BLOCOS = {
@@ -26,15 +28,40 @@ _BLOCOS = {
 }
 
 
+@retry(stop=stop_after_attempt(2), wait=wait_fixed(2))
+def _capturar_bloco(ws, endereco: str):
+    """CopyPicture + leitura do clipboard de 1 bloco só, com 1 nova
+    tentativa automática — achado real em 2026-10-13: `Range.CopyPicture`
+    pode falhar transitoriamente (`CopyPicture method of Range class
+    failed`, erro COM clássico de automação do Excel, provavelmente ligado
+    à janela do Excel ficar invisível durante a automação — `excel.Visible
+    = False`) mesmo com a planilha certinha; uma 2ª tentativa resolve na
+    maioria dos casos."""
+    from PIL import ImageGrab
+
+    rng = ws.Range(endereco)
+    rng.CopyPicture(Appearance=1, Format=2)  # xlScreen, xlBitmap
+    time.sleep(1)  # tempo do clipboard atualizar antes de ler
+    img = ImageGrab.grabclipboard()
+    if img is None:
+        raise RuntimeError("Clipboard veio vazio depois do CopyPicture.")
+    return img
+
+
 def capturar_prints_acomp_diario(caminho_planilha: Path, destino_dir: Path) -> list[Path]:
     """Abre `caminho_planilha` (já salva) no Excel de verdade, somente
     leitura (não altera o arquivo), recalcula tudo, e tira print dos 3
     blocos da aba ACOMP_DIARIO. Devolve os caminhos dos PNGs gerados.
-    Levanta exceção se algo falhar — quem chama decide se trata como aviso
-    (não deve derrubar a atualização de dado em si, que já terminou nesse
-    ponto — ver uso em `app/atualizar_excel.py`)."""
+
+    Cada bloco é independente — uma falha num bloco (mesmo após a nova
+    tentativa de `_capturar_bloco`) só pula ESSE bloco, não derruba os
+    outros 2 (achado real em 2026-10-13: antes, 1 bloco falhando abortava a
+    captura dos 3 inteira, já que o loop não tinha try/except nenhum). Só
+    levanta exceção daqui se algo falhar ANTES de entrar no loop de blocos
+    (ex.: não conseguir abrir o Excel/a planilha) — quem chama decide se
+    trata como aviso (não deve derrubar a atualização de dado em si, que já
+    terminou nesse ponto — ver uso em `app/atualizar_excel.py`)."""
     import win32com.client as win32
-    from PIL import ImageGrab
 
     destino_dir.mkdir(parents=True, exist_ok=True)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -52,13 +79,15 @@ def capturar_prints_acomp_diario(caminho_planilha: Path, destino_dir: Path) -> l
 
             ws = wb.Sheets("ACOMP_DIARIO")
             for nome, endereco in _BLOCOS.items():
-                rng = ws.Range(endereco)
-                rng.CopyPicture(Appearance=1, Format=2)  # xlScreen, xlBitmap
-                time.sleep(1)  # tempo do clipboard atualizar antes de ler
-                img = ImageGrab.grabclipboard()
-                if img is None:
+                try:
+                    img = _capturar_bloco(ws, endereco)
+                except Exception as exc:
                     logger.warning(
-                        "Print de %s (%s) veio vazio do clipboard — pulando.", nome, endereco
+                        "Não consegui tirar o print de %s (%s), mesmo com nova tentativa — "
+                        "pulando só esse bloco (não afeta a atualização de dado): %s",
+                        nome,
+                        endereco,
+                        exc,
                     )
                     continue
                 dest = destino_dir / f"{nome}_{timestamp}.png"
