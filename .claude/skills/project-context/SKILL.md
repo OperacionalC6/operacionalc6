@@ -656,15 +656,32 @@ escrever 1x só — os `atualizar_db_*` originais continuam existindo como wrapp
 (usados nos testes do sandbox). Cada conta tem seu próprio perfil de navegador salvo (variáveis
 `.env`: `C6_PORTAL_USERNAME_002921`/`_PASSWORD_002921` e `_003881`/`_003881` — a aprovação de
 dispositivo na 1ª vez é por conta, 2x no total). Prints de evidência saem 1x por conta (nome do
-arquivo identifica qual é qual). **Validado contra o portal real em 2026-10-13** 🎉: `--tudo` rodou de ponta a ponta sem erro, login
-nas 2 contas, download+empilhamento das 3 abas, 6 prints de evidência (3 por conta) + 3 do
-ACOMP_DIARIO, planilha salva. Dois bugs reais achados e corrigidos no processo: (1)
-`database_url`/`jwt_secret_key`/`google_oauth_client_id` eram obrigatórios em `Settings` mesmo
-não sendo usados pela automação local — travava `Settings()` sem valor fake, corrigido (viraram
-opcionais); (2) `parse_looker_number` quebrava em valor negativo formatado `"-R$ 24500.00"` (sinal
-colado no "R$", espaço antes do número — formato só visto na conta 003881) — corrigido removendo
-todo espaço da string antes de converter. Números de outubro ainda não foram validados visualmente
-pelo usuário contra o Excel (pedido feito, resposta pendente).
+arquivo identifica qual é qual). **Validado contra o portal real em 2026-10-13, de ponta a ponta, com sucesso** 🎉: `--tudo` rodou
+login nas 2 contas, download+empilhamento das 3 abas, prints de evidência, planilha salva — sem
+erro nenhum na execução final. Quatro bugs reais achados e corrigidos no caminho até chegar lá
+(todos já corrigidos e no repo):
+1. `database_url`/`jwt_secret_key`/`google_oauth_client_id` eram obrigatórios em `Settings` mesmo
+   não sendo usados pela automação local — travava `Settings()` sem valor fake. Viraram opcionais.
+2. `parse_looker_number` quebrava em valor negativo formatado `"-R$ 24500.00"` (sinal colado no
+   "R$", espaço antes do número — formato só visto na conta 003881). Corrigido removendo todo
+   espaço da string antes de converter.
+3. Corrida real no Playwright: o `confirm()` de "já autenticado em outra estação" (aparece em quase
+   todo login) dispara uma navegação que pode derrubar o polling de `_login` com "Execution context
+   was destroyed" — às vezes nas 2 tentativas do `@retry` seguidas. Corrigido com try/except
+   seletivo dentro do loop de polling (ver item 29 da skill `rpa-conventions`).
+4. `Range.CopyPicture` (prints do ACOMP_DIARIO, automação COM do Excel) falhando num bloco
+   derrubava a captura dos 3 blocos inteira. Corrigido: cada bloco agora tem retry próprio e falha
+   isoladamente (não afeta os outros 2) — ver `acomp_diario_evidencia.py`.
+
+Também confirmado por engenharia reversa do `.env`/ambiente do usuário: credenciais vivem em
+`backend/.env` (arquivo local, nunca commitado — `C6_PORTAL_USERNAME_002921`/`_PASSWORD_002921` e
+`_003881`/`_003881`), e **o mesmo clone local às vezes é reaproveitado por outros
+projetos/branches** (ex.: um app Streamlit de pesquisa de mercado pra GNs, branch
+`claude/practical-edison-8j2oto`) — se `atualizar_excel.py` sumir sem explicação, o 1º passo é
+checar `git branch`/`git status`, não assumir que o código quebrou.
+
+Números de outubro ainda não foram validados visualmente pelo usuário contra o Excel (pedido
+feito, resposta pendente) — próximo passo de confirmação, não vinculado a nenhum código pendente.
 
 ## Como uma sessão nova deve retomar
 
