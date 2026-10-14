@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -22,16 +23,13 @@ import streamlit as st
 # =============================================================================
 
 BASE_DIR = Path(__file__).parent
-LOJISTAS_CSV = BASE_DIR / "lojistas.csv"  # colunas: area;cnpj;nome
+# Base de Áreas/Lojistas: planilha com as colunas "ÁREA DO GN" e "LOJISTA".
+# LOJISTA no formato "12345 - NOME" ou "12345 - (GRUPO X) - NOME".
+# Para atualizar, basta substituir este arquivo mantendo as colunas.
+LOJISTAS_XLSX = BASE_DIR / "lojistas.xlsx"
+SEM_GRUPO = "SEM GRUPO"
 RESPOSTAS_CSV = BASE_DIR / "data" / "respostas.csv"
 FUSO = ZoneInfo("America/Sao_Paulo")
-
-# Usada só se lojistas.csv não existir. Para trocar Áreas/Lojistas, edite o CSV.
-LOJISTAS_PADRAO = {
-    "SP-Capital": [("12.345.678/0001-90", "Auto Peças Exemplo")],
-    "MG-Belo Horizonte": [("67.890.123/0001-45", "BH Automóveis")],
-    "RJ-Centro": [("89.012.345/0001-67", "Carioca Veículos")],
-}
 
 BANCOS_POS1 = ["Banco Honda", "Banco Yamaha", "Bradesco", "BV", "Carbank",
                "Itaú", "Pan", "Safra", "Santander", "Outros"]
@@ -45,7 +43,7 @@ VOLUME_MAX = 1000
 
 # Ordem das colunas na planilha final
 COLUNAS = [
-    "data_hora", "area_gn", "cnpj", "lojista",
+    "data_hora", "area_gn", "codigo_lojista", "grupo", "lojista",
     "banco_1", "banco_2", "banco_3",
     "acordo_banco_1", "acordo_banco_2", "acordo_banco_3",
     "recompensa_banco_1", "recompensa_banco_2", "recompensa_banco_3",
@@ -136,14 +134,29 @@ def cabecalho(subtitulo: str):
 # =============================================================================
 
 
+def separar_lojista(texto: str) -> tuple[str, str, str]:
+    """'12345 - (GRUPO X) - NOME' -> ('12345', 'GRUPO X', 'NOME')."""
+    codigo, _, resto = str(texto).partition(" - ")
+    resto = resto.strip()
+    grupo = SEM_GRUPO
+    m = re.match(r"^\((.+?)\)\s*-\s*(.*)$", resto)
+    if m:
+        grupo, resto = m.group(1).strip(), m.group(2).strip()
+    return codigo.strip(), grupo, resto
+
+
 @st.cache_data(ttl=300)
 def carregar_lojistas() -> pd.DataFrame:
-    if LOJISTAS_CSV.exists():
-        df = pd.read_csv(LOJISTAS_CSV, sep=None, engine="python", dtype=str)
-        df.columns = [c.strip().lower() for c in df.columns]
-        return df[["area", "cnpj", "nome"]].dropna().apply(lambda s: s.str.strip())
-    linhas = [(a, c, n) for a, lst in LOJISTAS_PADRAO.items() for c, n in lst]
-    return pd.DataFrame(linhas, columns=["area", "cnpj", "nome"])
+    bruto = pd.read_excel(LOJISTAS_XLSX, dtype=str).dropna(how="all")
+    col_area, col_loj = bruto.columns[:2]  # 1ª coluna: área; 2ª: lojista
+    bruto = bruto.dropna(subset=[col_area, col_loj])
+    partes = bruto[col_loj].map(separar_lojista)
+    df = pd.DataFrame({
+        "area": bruto[col_area].str.strip(),
+        "codigo": partes.str[0], "grupo": partes.str[1], "nome": partes.str[2],
+    })
+    df["rotulo"] = df["codigo"] + " - " + df["grupo"] + " - " + df["nome"]
+    return df.drop_duplicates(subset=["area", "codigo"]).reset_index(drop=True)
 
 
 def segredo(chave: str, padrao=None):
@@ -182,8 +195,8 @@ def _worksheet():
         ws = sh.worksheet(nome)
     except gspread.WorksheetNotFound:
         ws = sh.add_worksheet(title=nome, rows=1000, cols=len(COLUNAS))
-    if not ws.row_values(1):
-        ws.append_row(COLUNAS)
+    if ws.row_values(1) != COLUNAS:  # cria ou atualiza o cabeçalho
+        ws.update(values=[COLUNAS], range_name="A1")
     return ws
 
 
@@ -193,6 +206,11 @@ def salvar_resposta(registro: dict) -> None:
         _worksheet().append_row(linha, value_input_option="USER_ENTERED")
         return
     RESPOSTAS_CSV.parent.mkdir(parents=True, exist_ok=True)
+    if RESPOSTAS_CSV.exists():
+        cabecalho_atual = pd.read_csv(RESPOSTAS_CSV, sep=";", encoding="utf-8-sig", nrows=0)
+        if list(cabecalho_atual.columns) != COLUNAS:  # layout mudou: arquiva o antigo
+            RESPOSTAS_CSV.rename(RESPOSTAS_CSV.with_name(
+                f"respostas_antigo_{datetime.now(FUSO):%Y%m%d_%H%M%S}.csv"))
     novo = not RESPOSTAS_CSV.exists()
     pd.DataFrame([linha], columns=COLUNAS).to_csv(
         RESPOSTAS_CSV, mode="a", header=novo, index=False, sep=";", encoding="utf-8-sig"
@@ -259,9 +277,11 @@ def pagina_formulario():
                         placeholder="Selecione sua área", key="area",
                         on_change=lambda: st.session_state.pop("lojista", None))
     filtrados = lojistas[lojistas["area"] == area] if area else lojistas.iloc[0:0]
-    opcoes_loj = (filtrados["cnpj"] + " - " + filtrados["nome"]).tolist()
-    st.selectbox("Lojista (CNPJ - Nome) *", opcoes_loj, index=None,
-                 placeholder="Selecione a área primeiro" if not area else "Busque pelo CNPJ ou nome",
+    rotulos = dict(zip(filtrados["codigo"], filtrados["rotulo"]))
+    st.selectbox("Lojista (Código - Grupo - Nome) *", list(rotulos), index=None,
+                 format_func=lambda c: rotulos.get(c, c),
+                 placeholder="Selecione a área primeiro" if not area
+                 else "Busque pelo código, grupo ou nome",
                  disabled=not area, key="lojista")
 
     # 3-5. Bancos, acordos e recompensas -------------------------------------
@@ -270,7 +290,7 @@ def pagina_formulario():
         with st.expander(f"Banco Posição {pos}", expanded=True):
             seletor_banco(pos, opcoes)
             st.text_area(f"Acordos – Banco {pos}", key=f"ac{pos}", height=80,
-                         placeholder="Ex.: taxa diferenciada, retorno de 2%...")
+                         placeholder="Ex.: Plus por contrato, Plus por valor - % de Plus, taxa diferenciada...")
             st.text_area(f"Programa de Recompensa – Banco {pos}", key=f"rec{pos}", height=80,
                          placeholder="Ex.: R$ 50 por contrato, viagem...")
 
@@ -346,14 +366,16 @@ def enviar():
         return
 
     s = st.session_state
-    cnpj, _, nome = s["lojista"].partition(" - ")
+    lojistas = carregar_lojistas()
+    loja = lojistas[(lojistas["area"] == s["area"]) & (lojistas["codigo"] == s["lojista"])].iloc[0]
     quem = s["quem"]
     if quem == "Outros" and (s.get("quem_outro") or "").strip():
         quem = f"Outros: {s['quem_outro'].strip()}"
 
     registro = {
         "data_hora": datetime.now(FUSO).strftime("%d/%m/%Y %H:%M:%S"),
-        "area_gn": s["area"], "cnpj": cnpj, "lojista": nome,
+        "area_gn": s["area"], "codigo_lojista": loja["codigo"], "grupo": loja["grupo"],
+        "lojista": loja["nome"],
         "banco_1": nome_banco(1), "banco_2": nome_banco(2), "banco_3": nome_banco(3),
         "acordo_banco_1": s.get("ac1", "").strip(),
         "acordo_banco_2": s.get("ac2", "").strip(),
@@ -435,7 +457,7 @@ def pagina_gestor():
     # KPIs
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Respostas", len(df))
-    k2.metric("Lojistas", df["cnpj"].nunique())
+    k2.metric("Lojistas", df["codigo_lojista"].nunique())
     k3.metric("Posição média C6", f"{df['posicao_c6'].mean():.1f}" if len(df) else "-")
     k4.metric("Financ./mês (soma)", f"{int(df['financiamentos_mes'].sum()):,}".replace(",", "."))
 

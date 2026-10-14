@@ -7,7 +7,7 @@ a pesquisa de mercado dos lojistas, com painel do gestor protegido por senha
 ```
 pesquisa_gn/
 ├── app.py                          # aplicação
-├── lojistas.csv                    # Áreas e Lojistas (edite aqui)
+├── lojistas.xlsx                   # Áreas e Lojistas (edite aqui)
 ├── requirements.txt
 └── .streamlit/
     ├── config.toml                 # tema
@@ -18,11 +18,11 @@ pesquisa_gn/
 
 | O que mudar                        | Onde                                                        |
 |------------------------------------|-------------------------------------------------------------|
-| Áreas do GN e lojistas             | `lojistas.csv` (colunas `area;cnpj;nome`, abre no Excel)    |
+| Áreas do GN e lojistas             | `lojistas.xlsx` (colunas `ÁREA DO GN` e `LOJISTA` — basta substituir o arquivo) |
 | Listas de bancos, opções, limites  | Bloco **CONFIGURAÇÕES** no topo de `app.py`                 |
 | Senha do gestor                    | `ADMIN_PASSWORD` em `.streamlit/secrets.toml` ou nos Secrets do Cloud |
 
-As áreas do dropdown são lidas automaticamente do `lojistas.csv` — basta
+As áreas do dropdown são lidas automaticamente do `lojistas.xlsx` — basta
 adicionar linhas com uma área nova.
 
 ## Opção A – Rodar no seu computador
