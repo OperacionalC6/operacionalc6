@@ -590,6 +590,51 @@ def main():
     print("  OK: '-R$ 24500.00' vira -24500.0 (antes quebrava com ValueError por causa do espaço "
           "deixado entre o sinal e o número depois de remover 'R$').\n")
 
+    print("== testando remoção de duplicata exata (linha completa igual) — pedido 2026-10-15 ==")
+    print("   (achado real: depois do empilhamento das 2 contas Looker, vieram linhas duplicadas)")
+
+    wb_dedup = montar_workbook_sintetico()
+    df_com_duplicata = pd.DataFrame({
+        "Nome Gp": ["BRUNO", "BRUNO", "BRUNO"],
+        "CNPJ Loja": ["37748240000189", "37748240000189", "99988877000111"],
+        "Mês": [datetime(2026, 9, 1), datetime(2026, 9, 1), datetime(2026, 9, 1)],
+        "Produção C6": [100.0, 100.0, 200.0],
+    })
+    res_dedup = excel_sync.escrever_mercado(wb_dedup, "202609", df_com_duplicata)
+    print(res_dedup)
+    assert res_dedup["linhas_duplicadas_removidas"] == 1, (
+        f"esperava 1 duplicata exata removida (2 linhas idênticas -> 1 fica), veio "
+        f"{res_dedup['linhas_duplicadas_removidas']}"
+    )
+    assert res_dedup["linhas_baixadas"] == 2, (
+        f"esperava 2 linhas de dado DE FATO (depois de remover a duplicata), veio "
+        f"{res_dedup['linhas_baixadas']}"
+    )
+    assert res_dedup["check_quantidade_bate"] is True
+    ws_dedup = wb_dedup["db_mercado"]
+    assert ws_dedup.max_row == 4, f"esperava 4 linhas (header+modelo-ago+2 de dado únicas-set), veio {ws_dedup.max_row}"
+    print(
+        "  OK: linha 100% duplicada (todas as colunas iguais) é removida antes de gravar — só 1 "
+        "cópia fica, e 'linhas_baixadas' já reflete a contagem sem duplicata (não a bruta).\n"
+    )
+
+    print("== confirmando que linhas PARECIDAS mas não 100% iguais NÃO são removidas ==")
+    df_sem_duplicata_de_verdade = pd.DataFrame({
+        "Nome Gp": ["BRUNO", "BRUNO"],
+        "CNPJ Loja": ["37748240000189", "37748240000189"],
+        "Mês": [datetime(2026, 9, 1), datetime(2026, 9, 1)],
+        "Produção C6": [100.0, 150.0],  # só o valor difere — não é duplicata
+    })
+    res_sem_dup = excel_sync.escrever_mercado(
+        montar_workbook_sintetico(), "202609", df_sem_duplicata_de_verdade
+    )
+    assert res_sem_dup["linhas_duplicadas_removidas"] == 0, (
+        f"linhas com 1 coluna diferente não são duplicata exata — não deveriam ser removidas, "
+        f"veio {res_sem_dup['linhas_duplicadas_removidas']}"
+    )
+    assert res_sem_dup["linhas_baixadas"] == 2
+    print("  OK: 2 linhas da mesma loja/mês com Produção C6 diferente ficam as 2 (não é duplicata).\n")
+
     print("\nTODOS OS TESTES PASSARAM.")
 
 

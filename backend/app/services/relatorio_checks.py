@@ -19,6 +19,21 @@ def _fmt_moeda(v: float) -> str:
     return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def _linha_duplicatas(res: dict) -> list[str]:
+    """Linha extra só aparece quando `escrever_*` (excel_sync.py) de fato
+    removeu alguma duplicata exata antes de gravar — pedido do usuário em
+    2026-10-15. Silenciosa (sem linha nenhuma) no caso comum de 0
+    duplicatas, pra não poluir o relatório de toda execução."""
+    removidas = res.get("linhas_duplicadas_removidas", 0)
+    if not removidas:
+        return []
+    return [
+        f"  [ATENÇÃO] {removidas} linha(s) duplicada(s) (idêntica em todas as colunas) "
+        "removida(s) antes de gravar — confira se faz sentido (pode ser sinal de que as 2 "
+        "contas Looker não estão mais 100% disjuntas)."
+    ]
+
+
 def _linhas_pagasanalitico(res: dict) -> list[str]:
     return [
         f"  {res['linhas_baixadas']} linha(s) baixada(s) do Looker | "
@@ -26,6 +41,7 @@ def _linhas_pagasanalitico(res: dict) -> list[str]:
         f"soma Vl Financiamento (paga): {_fmt_moeda(res['soma_vl_financiamento_paga'])}",
         "  [INFO] sem comparação automática contra o Looker ainda — confira "
         'visualmente contra os gráficos "Digitação x Dia" e "(R$) Produção".',
+        *_linha_duplicatas(res),
     ]
 
 
@@ -45,6 +61,7 @@ def _linhas_apuracaoavista(res: dict) -> list[str]:
         f"{res['qtd_proposta_paga_pagasanalitico_mesmo_mes']} PROPOSTA PAGA em "
         "db_pagasanalitico no mesmo mês",
         f"  {marca} {detalhe}",
+        *_linha_duplicatas(res),
     ]
 
 
@@ -60,6 +77,7 @@ def _linhas_mercado(res: dict) -> list[str]:
     return [
         f"  {res['linhas_baixadas']} linha(s) baixada(s) | {res['linhas_registradas']} registrada(s) na planilha",
         f"  {marca} {detalhe}",
+        *_linha_duplicatas(res),
     ]
 
 

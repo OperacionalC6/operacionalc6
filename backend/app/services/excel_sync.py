@@ -389,6 +389,29 @@ def _as_date(v: object) -> date | None:
     return None
 
 
+def _remover_duplicatas_exatas(df: pd.DataFrame, aba: str) -> tuple[pd.DataFrame, int]:
+    """Remove linhas 100% idênticas (TODAS as colunas iguais) antes de
+    escrever — pedido do usuário em 2026-10-15: depois do suporte a 2
+    contas Looker (cada download agora é empilhado — ver
+    `baixar_tudo_multi_conta`), apareceram linhas duplicadas em
+    `Construcao.xlsx`. Comparar a linha INTEIRA (não só uma coluna-chave
+    tipo "ID Proposta") evita descartar por engano 2 linhas que só
+    parecem repetidas numa coluna — só remove quando bate tudo, dígito por
+    dígito. Devolve `(df_sem_duplicata, quantas_foram_removidas)`."""
+    antes = len(df)
+    df = df.drop_duplicates().reset_index(drop=True)
+    removidas = antes - len(df)
+    if removidas > 0:
+        logger.warning(
+            "%s: %d linha(s) duplicada(s) (idênticas em todas as colunas) removida(s) antes "
+            "de escrever — %d linha(s) de dado novo, de fato.",
+            aba,
+            removidas,
+            len(df),
+        )
+    return df, removidas
+
+
 # ---------------------------------------------------------------------------
 # db_pagasanalitico (grão: dia) — acompanhamento_veiculos / analitico
 # ---------------------------------------------------------------------------
@@ -670,6 +693,7 @@ def escrever_pagasanalitico_dia(wb, dia: date, df: pd.DataFrame) -> dict:
     desde a divisão em 2 acessos Looker em out/26, já EMPILHADO das 2
     contas — ver `baixar_tudo_multi_conta`). Extraído de
     `atualizar_db_pagasanalitico` em 2026-10-13."""
+    df, linhas_duplicadas_removidas = _remover_duplicatas_exatas(df, "db_pagasanalitico")
     ws = wb["db_pagasanalitico"]
     header_row = 1
     mapa = _header_map(ws, header_row)
@@ -734,6 +758,7 @@ def escrever_pagasanalitico_dia(wb, dia: date, df: pd.DataFrame) -> dict:
         "linhas_baixadas": len(df),
         "linhas_paga": len(pagas),
         "soma_vl_financiamento_paga": round(soma_vl_financiamento_pagas, 2),
+        "linhas_duplicadas_removidas": linhas_duplicadas_removidas,
     }
 
 
@@ -928,6 +953,7 @@ def escrever_apuracaoavista(wb, anomes: str, df: pd.DataFrame) -> dict:
     contas — ver `baixar_tudo_multi_conta`). Extraído de
     `atualizar_db_apuracaoavista` em 2026-10-13. `anomes` no formato
     'AAAAMM' (ex.: '202609')."""
+    df, linhas_duplicadas_removidas = _remover_duplicatas_exatas(df, "db_apuracaoavista")
     ws = wb["db_apuracaoavista"]
     header_row = 1
     mapa = _header_map(ws, header_row)
@@ -984,6 +1010,7 @@ def escrever_apuracaoavista(wb, anomes: str, df: pd.DataFrame) -> dict:
         "linhas_baixadas": len(df),
         "qtd_proposta_paga_pagasanalitico_mesmo_mes": qtd_pagas,
         "contagens_batem": len(df) == qtd_pagas,
+        "linhas_duplicadas_removidas": linhas_duplicadas_removidas,
     }
 
 
@@ -1048,6 +1075,7 @@ def escrever_mercado(wb, anomes: str, df: pd.DataFrame) -> dict:
     `atualizar_db_mercado` em 2026-10-13. `anomes` no formato 'AAAAMM' (ex.:
     '202609'). Sem restrição de "só o último bloco" — nenhuma outra aba
     referencia `db_mercado` por posição."""
+    df, linhas_duplicadas_removidas = _remover_duplicatas_exatas(df, "db_mercado")
     ws = wb["db_mercado"]
     header_row = 1
     mapa = _header_map(ws, header_row)
@@ -1108,6 +1136,7 @@ def escrever_mercado(wb, anomes: str, df: pd.DataFrame) -> dict:
         "linhas_baixadas": len(df),
         "linhas_registradas": linhas_registradas,
         "check_quantidade_bate": linhas_registradas == len(df),
+        "linhas_duplicadas_removidas": linhas_duplicadas_removidas,
     }
 
 
