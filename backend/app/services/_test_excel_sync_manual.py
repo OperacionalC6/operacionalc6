@@ -504,6 +504,8 @@ def main():
 
     excel_sync._capturar_evidencia_apuracao_parceiro = fake_cap_bloco
 
+    chamadas_filtro_av: list[str | None] = []
+
     def fake_baixar_multi_conta(
         report_name, tile_key, *, filter_query_override=None, filter_value_override=None, sessao=None
     ):
@@ -521,12 +523,23 @@ def main():
                 "Vl Financiamento": [100.0],
             })
         if report_name == "comissao_avista":
-            # Looker não filtra server-side pelo mês exato (ver docstring de
-            # _baixar_apuracaoavista) — devolve os 2 meses sempre, o filtro
-            # fica por conta de quem chama.
+            # Simula download em blocos mensais (ver _baixar_apuracaoavista_em_blocos,
+            # pedido 2026-11-04): cada filtro relativo só devolve o mês correspondente
+            # — diferente do mock antigo (devolvia os 2 meses de uma vez, simulando a
+            # janela larga "3 months" que foi substituída por isso aqui).
+            chamadas_filtro_av.append(filter_value_override)
+            mapa_filtro_para_anomes = {
+                None: "202610",  # chamada do mês atual, sem override (janela padrão)
+                "this month": "202610",
+                "1 months ago for 1 month": "202609",
+                "2 months ago for 1 month": "202608",
+            }
+            anomes_desse_bloco = mapa_filtro_para_anomes.get(filter_value_override)
+            if anomes_desse_bloco is None:
+                raise AssertionError(f"filtro inesperado em comissao_avista: {filter_value_override!r}")
             return pd.DataFrame({
-                "Anomes Apuracao": ["202610", "202609"],
-                "Cd Contrato": [f"AV_ATUAL_{rotulo}", f"AV_ANT_{rotulo}"],
+                "Anomes Apuracao": [anomes_desse_bloco],
+                "Cd Contrato": [f"AV_{anomes_desse_bloco}_{rotulo}"],
             })
         if report_name == "painel_visita_mercado":
             return pd.DataFrame({
@@ -564,6 +577,21 @@ def main():
     print(
         "  OK: baixa das 2 contas, empilha cada relatório/período, e tira evidência 1x por conta "
         "(4 prints no total).\n"
+    )
+
+    assert dado["apuracaoavista_anterior"]["Cd Contrato"].tolist() == ["AV_202609_AAA", "AV_202609_BBB"], (
+        "o catch-up do mês anterior devia ficar só com o bloco de 202609 (os outros 2 blocos "
+        f"baixados são de outro mês e devem ser descartados no filtro), veio {dado['apuracaoavista_anterior']}"
+    )
+    for esperado in ("this month", "1 months ago for 1 month", "2 months ago for 1 month"):
+        assert chamadas_filtro_av.count(esperado) == 2, (
+            f"esperava 1 chamada de '{esperado}' por conta (2 no total) no catch-up em blocos "
+            f"(_baixar_apuracaoavista_em_blocos, pedido 2026-11-04 pra evitar o limite de ~500 "
+            f"linhas por export do Looker), veio {chamadas_filtro_av.count(esperado)}. Chamadas: {chamadas_filtro_av}"
+        )
+    print(
+        "  OK: catch-up do mês anterior baixa em 3 blocos mensais separados (não 1 janela larga "
+        "'3 months' de uma vez só) e descarta os blocos que não são do mês pedido.\n"
     )
 
     print("== mesmo teste, sem catch-up do mês anterior (anomes_anterior=None) ==")

@@ -947,6 +947,50 @@ def _baixar_apuracaoavista(
     return df[df["Anomes Apuracao"] == anomes].reset_index(drop=True)
 
 
+def _baixar_apuracaoavista_em_blocos(
+    anomes: str,
+    *,
+    sessao: tuple[PortalRpaConnector, Page] | None = None,
+    meses_de_busca: int = 3,
+) -> pd.DataFrame:
+    """Mesma coisa que `_baixar_apuracaoavista`, mas em `meses_de_busca`
+    downloads MENSAIS separados (mês corrente + N-1 meses anteriores, sintaxe
+    relativa "X months ago for 1 month") em vez de 1 download só com janela
+    larga ("3 months" de uma vez) — pedido do usuário em 2026-11-04.
+
+    HIPÓTESE ainda não confirmada ao vivo: no catch-up do mês anterior de
+    2026-11-04, `arrastar_base_final` recusou a atualização porque
+    db_apuracaoavista voltou com MENOS linhas de outubro do que já estavam na
+    planilha (ver traceback real daquele dia). O usuário levantou a suspeita
+    de que a tile 'Comissão À Vista - Analítico' trunca o export perto de 500
+    linhas — mesma limitação de plataforma já documentada pra
+    `acompanhamento_veiculos` (skill `rpa-conventions`, item 26). Trocar o
+    FORMATO do download (CSV/XLSX) não resolveria: o limite é da query salva
+    da tile no Looker, não do formato de exportação — só pedir uma janela
+    menor por vez evita o corte.
+
+    A janela "3 months" antiga pedia tudo de uma vez (3 meses inteiros de
+    'Safra Mês', volume bem maior que qualquer mês isolado). Esta função pede
+    o equivalente em `meses_de_busca` fatias de 1 mês cada, empilha e só
+    depois filtra por `anomes` exato em Python (igual sempre foi feito) — o
+    volume de cada fatia individual fica bem menor, reduzindo o risco de
+    estourar o limite.
+
+    AINDA PENDENTE DE VALIDAÇÃO contra o portal real: não há como confirmar
+    daqui se o Looker aceita "N months ago for 1 month" no filtro 'Safra Mês'
+    desse dashboard específico (sintaxe relativa padrão do Looker, mas nunca
+    testada NESTE dashboard — só "2 months"/"6 month" simples vieram de URLs
+    reais compartilhadas). Se a sintaxe não for aceita, o sintoma esperado é
+    uma das fatias vir vazia/errada e `arrastar_base_final` recusar de novo
+    (a trava de segurança não muda — não corrompe nada, só avisa). Se isso
+    acontecer, mandar o log completo pra ajustar a sintaxe do filtro."""
+    blocos = []
+    for i in range(meses_de_busca):
+        filtro = "this month" if i == 0 else f"{i} months ago for 1 month"
+        blocos.append(_baixar_apuracaoavista(anomes, sessao=sessao, filter_value_override=filtro))
+    return pd.concat(blocos, ignore_index=True)
+
+
 def escrever_apuracaoavista(wb, anomes: str, df: pd.DataFrame) -> dict:
     """Só a escrita na planilha do mês pedido — `df` já deve vir filtrado (e,
     desde a divisão em 2 acessos Looker em out/26, já EMPILHADO das 2
@@ -1251,9 +1295,7 @@ def baixar_tudo_multi_conta(
 
             if anomes_anterior is not None:
                 av_anterior.append(
-                    _baixar_apuracaoavista(
-                        anomes_anterior, sessao=sessao, filter_value_override="3 months"
-                    )
+                    _baixar_apuracaoavista_em_blocos(anomes_anterior, sessao=sessao)
                 )
                 mercado_anterior.append(_baixar_mercado(anomes_anterior, sessao=sessao))
 

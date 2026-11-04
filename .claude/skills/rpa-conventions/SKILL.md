@@ -307,6 +307,29 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     aceitar um dialog nativo está sujeito a essa corrida, vale o mesmo padrão de try/except seletivo
     se aparecer em outro lugar.
 
+30. **O limite de ~500 linhas por export de tile do Looker (item 26) também afeta o catch-up do mês
+    anterior de `db_apuracaoavista`, não só `acompanhamento_veiculos`.** Confirmado na virada de
+    mês de 2026-11-04: o catch-up de outubro (`filter_value_override="3 months"`, janela larga de
+    'Safra Mês' pra não perder contrato com apuração mais antiga — ver item/docstring de
+    `_baixar_apuracaoavista`) voltou com MENOS linhas de outubro do que já estavam gravadas em
+    `db_apuracaoavista`, disparando a trava de `arrastar_base_final` ("base_final tem mais linhas do
+    que db_apuracaoavista suporta — isso não deveria acontecer nunca"). Hipótese do usuário (ainda
+    **não confirmada ao vivo** contra o portal, só implementada): a tile 'Comissão À Vista -
+    Analítico' trunca o export perto de 500 linhas igual a outras tiles, e uma janela de "3 months"
+    de uma vez pede volume demais pra ficar sob esse limite. Trocar o FORMATO do download (CSV/XLSX)
+    não ajudaria — o limite é da query salva da tile no Looker, não do formato de exportação.
+    **Solução implementada** (`_baixar_apuracaoavista_em_blocos` em `excel_sync.py`): em vez de 1
+    download com janela larga, fazer N downloads de 1 MÊS cada (sintaxe relativa "X months ago for 1
+    month" — mesma família de sintaxe relativa já usada em produção pra "2 months"/"6 month", só que
+    com range explícito), empilhar e só depois filtrar por `anomes` exato em Python, igual sempre foi
+    feito. **Pendente de validação real**: nunca testamos "N months ago for 1 month" especificamente
+    nesse dashboard — se o Looker não aceitar essa sintaxe no filtro 'Safra Mês', o sintoma esperado é
+    uma das fatias vir vazia/errada e a trava de `arrastar_base_final` recusar de novo (não corrompe
+    nada, só avisa outra vez — mesma trava de sempre). Lição geral: qualquer relatório que precise de
+    janela de tempo LARGA pra não perder dado antigo (não só janela curta de volume alto) está sujeito
+    ao mesmo truncamento — pensar em quebrar em fatias menores ANTES de simplesmente alargar o filtro,
+    não só nos relatórios de volume diário alto como `acompanhamento_veiculos`.
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por
