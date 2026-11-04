@@ -130,7 +130,12 @@ def _accept_dialog_logged(dialog) -> None:
     (ainda aceita tudo, igual sempre — ver "Linha que não se cruza" na skill
     rpa-conventions, não vamos deixar um dialog sem resposta), só passa a
     registrar o texto pra debug futuro ser imediato em vez de arqueológico.
-    """
+
+    Mantida só pelo nome antigo (compatibilidade) — quem efetivamente é
+    registrado em `page.on("dialog", ...)` hoje é `PortalRpaConnector._on_dialog`
+    (ver abaixo), que faz o mesmo log e AINDA guarda o texto de um `alert()`
+    pra `_login` poder reagir na hora em vez de esperar timeout — ver item 31
+    da skill `rpa-conventions` (comentário de `_on_dialog`)."""
     logger.info("Dialog nativo do navegador (%s): %r — aceitando.", dialog.type, dialog.message)
     dialog.accept()
 
@@ -153,6 +158,37 @@ class PortalRpaConnector(DataConnector):
         self._config = json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
         _ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
         self._conta.perfil_dir.mkdir(parents=True, exist_ok=True)
+        # Guarda o texto do último alert() nativo visto (ver `_on_dialog`) —
+        # `_login` confere isso a cada ciclo do polling pra falhar na hora com
+        # a mensagem real, em vez de só estourar o timeout genérico de 60s.
+        self._ultimo_alert_login: str | None = None
+
+    def _on_dialog(self, dialog) -> None:
+        """Substitui `_accept_dialog_logged` como handler registrado em
+        `page.on("dialog", ...)` — achado real em 2026-11-04 (conta 003881,
+        login recusado com alert 'Usuário ou senha inválido.'): esse alert
+        FICOU LOGADO (graças ao fix de 2026-09-24, ver `_accept_dialog_logged`)
+        mas `_login` não tinha como saber que aquele alert especificamente
+        significava falha — ele só olha `error_selector` (texto na própria
+        página, `#lblErro`/`#Sumario`), que não existe pra erro mostrado via
+        `alert()` nativo. Resultado: esperou os 60s inteiros e levantou um
+        `PortalLoginError` genérico ('nem sucesso nem erro detectados'),
+        escondendo a mensagem real que já estava no log 1 linha acima —
+        mesmo padrão dos itens 27/28 desta skill, só que pelo canal de dialog
+        em vez de pelo canal de página.
+
+        Toda vez que um `alert()` (não `confirm()` — esse é o de "já
+        autenticado em outra estação", sempre esperado e nunca erro) aparece
+        durante o login, até hoje foi SEMPRE uma mensagem de erro de negócio
+        do portal (campo obrigatório, caracteres perigosos, usuário
+        inativo/afastado, usuário ou senha inválida). Por isso guardamos o
+        texto aqui e `_login` falha com ele na hora, em vez de esperar o
+        timeout — não tem como isso "esconder" um login que ia dar certo,
+        porque nenhum alert() aparece no caminho de sucesso."""
+        logger.info("Dialog nativo do navegador (%s): %r — aceitando.", dialog.type, dialog.message)
+        if dialog.type == "alert":
+            self._ultimo_alert_login = dialog.message
+        dialog.accept()
 
     def fetch(self, *, date_from: date, date_to: date) -> list[ConnectorRecord]:
         """
@@ -189,7 +225,7 @@ class PortalRpaConnector(DataConnector):
             # antes de aceitar (ver `_accept_dialog_logged`) — sem isso, um
             # alert() de validação (ex.: senha rejeitada) passa batido, sem
             # deixar rastro nenhum de qual foi o erro real.
-            page.on("dialog", _accept_dialog_logged)
+            page.on("dialog", self._on_dialog)
             try:
                 self._login(page)
                 for report_cfg in self._config["reports"]:
@@ -259,6 +295,11 @@ class PortalRpaConnector(DataConnector):
         error_selector = login_cfg.get("error_message_selector")
         success_selector = login_cfg.get("success_indicator_selector")
 
+        # Zera a cada tentativa (o @retry chama _login várias vezes com o
+        # MESMO page/connector) — um alert() de uma tentativa anterior não
+        # pode falhar a tentativa atual antes mesmo dela rodar.
+        self._ultimo_alert_login = None
+
         # "networkidle" trava em sites com scripts de antifraude que mantêm
         # chamadas de rede em segundo plano (ex.: checagem de dispositivo do
         # WebAutorizador) — a espera nunca "acalma" e o goto acaba estourando
@@ -313,6 +354,15 @@ class PortalRpaConnector(DataConnector):
                                 f"Falha ao autenticar no portal C6 (usuário de automação). "
                                 f"Mensagem do portal: {error_text}."
                             )
+
+                if self._ultimo_alert_login:
+                    raise PortalLoginError(
+                        f"Falha ao autenticar no portal C6 (usuário de automação, conta "
+                        f"'{self._conta.rotulo}'). Mensagem do portal (alert nativo): "
+                        f"{self._ultimo_alert_login!r}. Confira usuário/senha em "
+                        f"C6_PORTAL_USERNAME_{self._conta.rotulo}/"
+                        f"C6_PORTAL_PASSWORD_{self._conta.rotulo} no .env."
+                    )
             except PlaywrightError as exc:
                 # Achado real em 2026-10-13: o confirm() de "já autenticado em
                 # outra estação" (item 4 da skill rpa-conventions) dispara uma

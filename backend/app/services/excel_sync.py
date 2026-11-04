@@ -56,7 +56,6 @@ from app.services.connectors.portal_rpa import (
     _HEADLESS,
     ContaLooker,
     PortalRpaConnector,
-    _accept_dialog_logged,
     contas_looker,
 )
 
@@ -110,7 +109,7 @@ def sessao_looker(conta: ContaLooker):
             args=["--disable-save-password-bubble"],
         )
         page = context.pages[0] if context.pages else context.new_page()
-        page.on("dialog", _accept_dialog_logged)
+        page.on("dialog", connector._on_dialog)
         try:
             connector._login(page)
             connector._bootstrap_looker_session(page)

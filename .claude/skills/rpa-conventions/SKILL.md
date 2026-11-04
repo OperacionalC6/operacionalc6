@@ -330,6 +330,28 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     ao mesmo truncamento — pensar em quebrar em fatias menores ANTES de simplesmente alargar o filtro,
     não só nos relatórios de volume diário alto como `acompanhamento_veiculos`.
 
+31. **Alert nativo de erro de login (`"Usuário ou senha inválido."`) ficava LOGADO (item 27) mas não
+    fazia `_login` falhar rápido — ainda esperava o timeout genérico de 60s, igual ao item 28.**
+    Confirmado em produção (2026-11-04, conta 003881): o log mostrou claramente "Dialog nativo do
+    navegador (alert): 'Usuário ou senha inválido.' — aceitando." duas vezes (1 por tentativa do
+    `@retry`), mas `_login` só olha `error_selector` (`#lblErro`/`#Sumario`, texto NA PÁGINA) pra
+    detectar falha — um `alert()` nativo não aparece nesse seletor, então as 2 tentativas rodaram os
+    60s inteiros cada (121s total) só pra no fim levantar o `PortalLoginError` GENÉRICO ("nem sucesso
+    nem erro detectados"), escondendo a mensagem real que já estava 1 linha acima no log. Mesmo
+    padrão dos itens 27/28, só que pelo canal de `dialog` em vez do canal de página. **Corrigido**:
+    `_accept_dialog_logged` (função solta) foi substituída como handler registrado por
+    `PortalRpaConnector._on_dialog` (método), que faz o mesmo log mas também guarda
+    `self._ultimo_alert_login = dialog.message` quando `dialog.type == "alert"` (nunca quando é
+    `"confirm"` — esse é o de "já autenticado em outra estação", sempre esperado, nunca erro).
+    `_login` zera esse campo no início de cada tentativa e confere a cada ciclo do polling (mesmo
+    loop que já confere `error_selector`) — se vier preenchido, falha IMEDIATAMENTE com a mensagem
+    real do alert, em vez de esperar o timeout. Seguro por construção: nenhum `alert()` aparece no
+    caminho de login bem-sucedido, então isso só pode acelerar/clarear uma falha que ia acontecer de
+    qualquer jeito, nunca transformar um login que ia dar certo em falha. Lição geral: toda vez que
+    `_accept_dialog_logged`/`_on_dialog` loga um `alert()` novo tipo de mensagem, considerar se vale
+    ensinar `_login` a reconhecê-lo como falha imediata — não assumir que só porque já está logado o
+    problema de diagnóstico está resolvido.
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por
