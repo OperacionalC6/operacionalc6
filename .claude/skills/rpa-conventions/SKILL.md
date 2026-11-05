@@ -352,6 +352,27 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     ensinar `_login` a reconhecê-lo como falha imediata — não assumir que só porque já está logado o
     problema de diagnóstico está resolvido.
 
+32. **`pd.read_csv` quebra com `EmptyDataError` quando o export do Looker vem COMPLETAMENTE vazio
+    (nem cabeçalho) — diferente do caso já tratado de CSV com cabeçalho e 0 linhas de dado.**
+    Confirmado em produção (2026-11-05, conta 003881, `painel_visita_mercado` no mês corrente logo
+    nos primeiros dias — filtro de mês EXATO, sem janela relativa pra "esperar" o Looker calcular o
+    mês ainda, diferente de outros relatórios que usam `filter_value: "2 months"`/
+    `{last_closed_month}` justamente pra evitar isso). Um CSV com cabeçalho mas 0 linhas de dado
+    (caso comum, já testado e funcionando — ex.: `comissao_avista` voltando "0 linhas" pra uma conta
+    sem aquele tipo de operação) não dá problema: `pd.read_csv` lê normalmente e devolve um
+    DataFrame vazio MAS com as colunas certas. Um CSV sem absolutamente nada (nem a linha de
+    cabeçalho) é mais extremo: `pd.read_csv` levanta `EmptyDataError`, e o código que vem depois
+    (`df["Mês"] = pd.to_datetime(df["Mês"])...` em `_baixar_mercado`) quebraria com `KeyError` de
+    qualquer forma, mesmo se a gente evitasse o `EmptyDataError`, porque não tem como saber o nome
+    das colunas de um arquivo que não trouxe nenhuma. **Corrigido**: `baixar_looker_bruto` agora
+    pega esse `EmptyDataError` e devolve um DataFrame vazio (0 linhas, 0 colunas) em vez de quebrar;
+    `_baixar_mercado` ganhou uma guarda (`if df.empty: return df`) ANTES de tentar acessar a coluna
+    'Mês', devolvendo 0 linhas direto — resposta correta mesmo (filtro de mês exato, sem dado pro mês
+    pedido). As outras 2 funções `_baixar_*` (pagasanalitico, apuracaoavista) têm o MESMO padrão
+    (`baixar_looker_bruto(...)` seguido de acesso direto a uma coluna) e por isso o MESMO risco em
+    teoria, mas nunca reproduziram o bug até agora (janelas mais largas/relativas, menos provável
+    vir um export 100% vazio) — se acontecer com qualquer uma delas, aplicar a mesma guarda ali.
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por

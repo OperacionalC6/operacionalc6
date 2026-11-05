@@ -30,6 +30,11 @@ from app.services.excel_sync import (
     atualizar_db_pagasanalitico_ultimos_dias,
 )
 
+# Guardado ANTES de qualquer teste substituir excel_sync.baixar_looker_bruto por
+# uma fake — precisamos da função de verdade pra testar o tratamento de
+# EmptyDataError dela mesma (ver teste "export do Looker COMPLETAMENTE vazio").
+_BAIXAR_LOOKER_BRUTO_REAL = excel_sync.baixar_looker_bruto
+
 
 def montar_workbook_sintetico() -> openpyxl.Workbook:
     wb = openpyxl.Workbook()
@@ -455,6 +460,48 @@ def main():
         f"veio {janelas_recebidas}"
     )
     print("  OK: filter_value_override chega até baixar_looker_bruto; sem passar, fica None (padrão).\n")
+
+    print("== conferindo export do Looker COMPLETAMENTE vazio (bug real 2026-11-05, conta 003881) ==")
+    print("   (painel_visita_mercado no mês corrente, nos primeiros dias — CSV sem nem cabeçalho)")
+
+    import json
+    import tempfile
+
+    from app.services.connectors.portal_rpa import _CONFIG_PATH
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        csv_vazio = Path(tmp_dir) / "vazio.csv"
+        csv_vazio.write_text("", encoding="utf-8")
+
+        class _SessaoFakeVazia:
+            # _config precisa ser o portal_selectors.json de verdade (só
+            # leitura, sem credencial nenhuma) pra `_find_report_cfg`/
+            # `_find_tile_cfg` acharem o relatório/tile reais antes de chegar
+            # no download (que a gente substitui abaixo pelo CSV vazio).
+            _config = json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
+
+            def _download_looker_tiles(self, page, report_cfg):
+                return [(csv_vazio, report_cfg["tiles"][0])]
+
+        conector_fake = _SessaoFakeVazia()
+        df_vazio = _BAIXAR_LOOKER_BRUTO_REAL(
+            "painel_visita_mercado", "analitico_mercado_por_loja", sessao=(conector_fake, "page_fake")
+        )
+        assert df_vazio.empty, (
+            f"CSV sem cabeçalho nenhum (EmptyDataError do pandas) deveria virar DataFrame vazio sem "
+            f"quebrar, veio {df_vazio!r}"
+        )
+        print("  OK: baixar_looker_bruto não quebra com CSV totalmente vazio (nem cabeçalho) — vira "
+              "DataFrame vazio.")
+
+        excel_sync.baixar_looker_bruto = lambda *a, **k: pd.DataFrame()
+        df_mercado_vazio = excel_sync._baixar_mercado("202611", sessao=None)
+        assert df_mercado_vazio.empty, (
+            f"_baixar_mercado deveria devolver DataFrame vazio sem tentar acessar a coluna 'Mês' "
+            f"(que não existe num DataFrame totalmente vazio), veio {df_mercado_vazio!r}"
+        )
+        print("  OK: _baixar_mercado devolve vazio direto, sem quebrar tentando ler a coluna 'Mês' "
+              "num DataFrame sem colunas.\n")
 
     print("== testando baixar_de_todas_contas (empilha 1 download de cada conta — pedido 2026-10-13) ==")
 

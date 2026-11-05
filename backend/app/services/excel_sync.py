@@ -192,7 +192,26 @@ def baixar_looker_bruto(
     if file_path.suffix.lower() in (".xlsx", ".xls"):
         df = pd.read_excel(file_path)
     else:
-        df = pd.read_csv(file_path)
+        try:
+            df = pd.read_csv(file_path)
+        except pd.errors.EmptyDataError:
+            # Achado real em 2026-11-05 (painel_visita_mercado, conta 003881,
+            # mês corrente nos primeiros dias): o export do Looker veio
+            # COMPLETAMENTE vazio — nem cabeçalho, diferente do caso já
+            # tratado (CSV com cabeçalho e 0 linhas de dado, que pd.read_csv
+            # já lê sem erro). pd.read_csv quebra com EmptyDataError nesse
+            # caso mais extremo. Tratamos como "0 linhas" também — quem
+            # chama que decida se precisa de alguma coluna específica antes
+            # de usar (ver guarda em `_baixar_mercado`).
+            logger.warning(
+                "Export do Looker pra '%s'/'%s' veio completamente vazio (nem cabeçalho) — "
+                "provavelmente esse relatório ainda não tem nenhum dado pro filtro/período "
+                "pedido. Tratando como 0 linhas (arquivo: %s).",
+                report_name,
+                tile_key,
+                file_path,
+            )
+            df = pd.DataFrame()
     logger.info(
         "Baixado '%s'/'%s': %d linhas, %d colunas (arquivo: %s).",
         report_name,
@@ -1107,6 +1126,16 @@ def _baixar_mercado(
         filter_query_override=filtro_base,
         sessao=sessao,
     )
+    if df.empty:
+        # Achado real em 2026-11-05 (conta 003881, mês corrente nos primeiros
+        # dias): o export veio completamente vazio (nem cabeçalho — ver
+        # `baixar_looker_bruto`), sem a coluna 'Mês' pra nem dar pra tentar o
+        # parse de data abaixo. Mesmo espírito do `filter_value: "2 months"` /
+        # `{last_closed_month}` já usados em outros relatórios por esse mesmo
+        # motivo (Looker ainda não calculou o mês corrente) — só que aqui o
+        # filtro é por mês EXATO, então não tem janela pra "esperar" o dado
+        # aparecer num filtro mais largo: 0 linhas é a resposta certa mesmo.
+        return df
     df["Mês"] = pd.to_datetime(df["Mês"]).dt.date
     return df[df["Mês"].apply(lambda d: d.year == ano and d.month == mes)].reset_index(drop=True)
 
