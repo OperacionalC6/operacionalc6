@@ -373,6 +373,24 @@ Cada um destes já causou uma sessão inteira de debug. Se um sintoma parecido a
     teoria, mas nunca reproduziram o bug até agora (janelas mais largas/relativas, menos provável
     vir um export 100% vazio) — se acontecer com qualquer uma delas, aplicar a mesma guarda ali.
 
+33. **`TimeoutError: ... waiting for event "download"` na tile 'Analítico' de `acompanhamento_veiculos`
+    — 2 ocorrências reais (2026-11-04 conta 002921, 2026-11-05 conta 003881), mesmo com as 2
+    tentativas do `@retry`.** Antes de mexer em qualquer seletor, pedimos o print+HTML que
+    `_save_failure_artifacts` já salva automaticamente no momento da falha (ver "Fluxo de validação"
+    abaixo) — e eles DESCARTARAM a suspeita que já estava documentada aqui (item 'SUSPEITA' antiga em
+    `portal_selectors.json`, de que o botão 'Tile actions' apareceria antes da tile terminar a
+    própria query): o print mostrou a tile JÁ TOTALMENTE renderizada (tabela cheia, sem spinner, sem
+    erro visível, cache de minutos atrás — "17m ago"), e o HTML não tinha NENHUM modal/menu aberto
+    (nem o texto 'Download data' em lugar nenhum do DOM). Ou seja: os 3 cliques (Tile actions >
+    Download data > Download) já tinham rodado e o modal já tinha fechado normalmente — a falha não é
+    de clique/seletor, é o Looker demorando mais de 60s pra GERAR o arquivo de export em si (tile tem
+    '38 filters' aplicados, query de export mais pesada que o cache usado só pra exibir o dashboard).
+    **Corrigido**: `download_wait_ms` de `acompanhamento_veiculos` subiu de 60000 pra 120000 em
+    `portal_selectors.json` (ver `_download_wait_nota` lá). Ainda não confirmado se 120s basta — lição
+    geral (reforça o "Fluxo de validação" abaixo): **sempre pedir o print/HTML da falha antes de
+    decidir SE o problema é seletor, timing, ou servidor lento** — os 3 têm sintoma parecido
+    (timeout), mas o print descarta 2 das 3 hipóteses na hora, e sem ele a correção vira chute.
+
 ## Fluxo de validação (sempre que mexer em seletor/fluxo novo)
 
 Não dá pra testar a partir deste ambiente (sandbox não tem rede pros domínios do C6 — bloqueado por
